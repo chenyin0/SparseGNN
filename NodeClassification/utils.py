@@ -61,12 +61,12 @@ def load_data(dataset_str):
     if dataset_str == 'citeseer':
         # Fix citeseer dataset (there are some isolated nodes in the graph)
         # Find isolated nodes, add them as zero-vecs into the right position
-        test_idx_range_full = range(min(test_idx_reorder), max(test_idx_reorder)+1)
+        test_idx_range_full = range(min(test_idx_reorder), max(test_idx_reorder) + 1)
         tx_extended = sp.lil_matrix((len(test_idx_range_full), x.shape[1]))
-        tx_extended[test_idx_range-min(test_idx_range), :] = tx
+        tx_extended[test_idx_range - min(test_idx_range), :] = tx
         tx = tx_extended
         ty_extended = np.zeros((len(test_idx_range_full), y.shape[1]))
-        ty_extended[test_idx_range-min(test_idx_range), :] = ty
+        ty_extended[test_idx_range - min(test_idx_range), :] = ty
         ty = ty_extended
 
     features = sp.vstack((allx, tx)).tolil()
@@ -87,13 +87,14 @@ def load_data(dataset_str):
 
     idx_test = test_idx_range.tolist()
     idx_train = list(range(len(y)))
-    idx_val = list(range(len(y), len(y)+500))
+    idx_val = list(range(len(y), len(y) + 500))
 
     return adj, features, labels, idx_train, idx_val, idx_test
 
 
 def sparse_to_tuple(sparse_mx):
     """Convert sparse matrix to tuple representation."""
+
     def to_tuple(mx):
         if not sp.isspmatrix_coo(mx):
             mx = mx.tocoo()
@@ -176,7 +177,7 @@ def chebyshev_polynomials(adj, k):
         s_lap = sp.csr_matrix(scaled_lap, copy=True)
         return 2 * s_lap.dot(t_k_minus_one) - t_k_minus_two
 
-    for i in range(2, k+1):
+    for i in range(2, k + 1):
         t_k.append(chebyshev_recurrence(t_k[-1], t_k[-2], scaled_laplacian))
 
     return sparse_to_tuple(t_k)
@@ -185,8 +186,7 @@ def chebyshev_polynomials(adj, k):
 def sparse_mx_to_torch_sparse_tensor(sparse_mx):
     """Convert a scipy sparse matrix to a torch sparse tensor."""
     sparse_mx = sparse_mx.tocoo().astype(np.float32)
-    indices = torch.from_numpy(
-        np.vstack((sparse_mx.row, sparse_mx.col)).astype(np.int64))
+    indices = torch.from_numpy(np.vstack((sparse_mx.row, sparse_mx.col)).astype(np.int64))
     values = torch.from_numpy(sparse_mx.data)
     shape = torch.Size(sparse_mx.shape)
     return torch.sparse.FloatTensor(indices, values, shape)
@@ -210,12 +210,12 @@ def load_adj_raw(dataset_str):
     if dataset_str == 'citeseer':
         # Fix citeseer dataset (there are some isolated nodes in the graph)
         # Find isolated nodes, add them as zero-vecs into the right position
-        test_idx_range_full = range(min(test_idx_reorder), max(test_idx_reorder)+1)
+        test_idx_range_full = range(min(test_idx_reorder), max(test_idx_reorder) + 1)
         tx_extended = sp.lil_matrix((len(test_idx_range_full), x.shape[1]))
-        tx_extended[test_idx_range-min(test_idx_range), :] = tx
+        tx_extended[test_idx_range - min(test_idx_range), :] = tx
         tx = tx_extended
         ty_extended = np.zeros((len(test_idx_range_full), y.shape[1]))
-        ty_extended[test_idx_range-min(test_idx_range), :] = ty
+        ty_extended[test_idx_range - min(test_idx_range), :] = ty
         ty = ty_extended
 
     adj_raw = nx.adjacency_matrix(nx.from_dict_of_lists(graph))
@@ -235,3 +235,111 @@ def load_adj_raw(dataset_str):
 #     ss_labels = torch.tensor(ss_labels, dtype=torch.int64)
 
 #     return ss_labels
+
+
+def op_count_ax_w(adj, feat, weight):
+    num_op = op_count(adj, feat)
+    ax = torch.mm(adj, feat)
+    num_op += op_count(ax, weight)
+    # axw = torch.mm(ax, weight)
+
+    return num_op
+
+
+def op_count_a_xw(adj, feat, weight):
+    num_op = op_count(feat, weight)
+    xw = torch.mm(feat, weight)
+    num_op += op_count(adj, xw)
+    # axw = torch.mm(ax, weight)
+
+    return num_op
+
+
+# def op_count(mat_a, mat_b):
+#     mat_a = mat_a.clone().detach().cpu().numpy()
+#     mat_b = mat_b.clone().detach().cpu().numpy().T
+#     nonzero_ind_mat_a = []
+#     nonzero_ind_mat_b = []
+
+#     for i in range(mat_a.shape[0]):
+#         ind = np.nonzero(mat_a[i])[0].tolist()
+#         nonzero_ind_mat_a.append(ind)
+
+#     for i in range(mat_b.shape[0]):
+#         ind = np.nonzero(mat_b[i])[0].tolist()
+#         nonzero_ind_mat_b.append(ind)
+
+#     num_mul = 0
+#     num_add = 0
+
+#     for i in range(len(nonzero_ind_mat_a)):
+#         for j in range(len(nonzero_ind_mat_b)):
+#             ind_a = nonzero_ind_mat_a[i]
+#             ind_b = nonzero_ind_mat_b[j]
+#             ind_nonzero = set(ind_a) & set(ind_b)
+#             num_nonzero = len(ind_nonzero)
+#             num_mul += num_nonzero
+#             num_add += num_nonzero
+
+#     return num_mul + num_add
+
+
+def op_count(mat_a, mat_b):
+    mat_a = mat_a.clone().detach()
+    mat_b = mat_b.clone().detach()
+
+    mat_a_zeros = torch.zeros_like(mat_a, dtype=torch.uint8)
+    mat_a_ones = torch.ones_like(mat_a, dtype=torch.uint8)
+    mat_a_nonzero = torch.where(mat_a != 0, mat_a_ones, mat_a_zeros)
+
+    mat_b_zeros = torch.zeros_like(mat_b, dtype=torch.uint8)
+    mat_b_ones = torch.ones_like(mat_b, dtype=torch.uint8)
+    mat_b_nonzero = torch.where(mat_b != 0, mat_b_ones, mat_b_zeros)
+
+    mat_b_nonzero = mat_b_nonzero.t()
+
+    num_mul = 0
+    num_add = 0
+
+    for i in range(mat_b_nonzero.shape[0]):
+        partial = torch.mul(mat_a_nonzero, mat_b_nonzero[i])
+        num_nonzero = partial.sum().item()
+        num_mul += num_nonzero
+        num_add += num_nonzero
+
+    return num_mul + num_add
+
+
+def count_sparsity(m):
+    m_zeros = torch.zeros_like(m, dtype=torch.bool)
+    m_ones = torch.ones_like(m, dtype=torch.bool)
+    m_nonzero = torch.where(m != 0, m_ones, m_zeros)
+    num_total = m_nonzero.numel()
+    num_nonzero = m_nonzero.sum().item()
+    sparsity = round(num_nonzero / num_total, 3)
+
+    return sparsity
+
+
+# def random_val():
+#     import random
+
+#     length = 128
+#     up_bound = pow(2, length) - 1
+#     low_bound = 0
+#     num = 10000
+#     a = []
+#     for i in range(num):
+#         val = random.randint(low_bound, up_bound)
+#         val_bin = bin(val)
+#         val_str = str(val_bin)[2:]
+#         if len(val_str) < length:
+#             val_str = '0' * (length - len(val_str)) + val_str
+#         a.append(val_str)
+#     print(a)
+
+#     filepath = './' + str(length) + 'b_10000.txt'
+#     with open(filepath, 'w') as f:
+#         for i in a:
+#             f.write(i)
+#             f.write('\n')
