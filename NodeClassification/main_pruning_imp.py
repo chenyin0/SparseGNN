@@ -23,17 +23,26 @@ def run_fix_mask(args, seed, rewind_weight_mask):
 
     pruning.setup_seed(seed)
 
-    adj, features, labels, idx_train, idx_val, idx_test = load_data(args['dataset'])
+    # adj, features, labels, idx_train, idx_val, idx_test = load_data(args['dataset'])
+    adj, features, labels, idx_train, idx_val, idx_test, n_classes = utils.load_dataset(
+        args['dataset'])
 
-    node_num = features.size()[0]
-    class_num = labels.numpy().max() + 1
+    # node_num = features.size()[0]
+    # class_num = labels.numpy().max() + 1
 
     adj = adj.cuda()
     features = features.cuda()
     labels = labels.cuda()
     loss_func = nn.CrossEntropyLoss()
 
-    net_gcn = net.net_gcn(embedding_dim=args['embedding_dim'], adj=adj)
+    in_feats = features.shape[-1]
+    n_hidden = args['n_hidden']
+    embedding_dim = [in_feats]
+    embedding_dim += [n_hidden] * (args['n_layer'] - 2)
+    embedding_dim.append(n_classes)
+
+    # net_gcn = net.net_gcn(embedding_dim=args['embedding_dim'], adj=adj)
+    net_gcn = net.net_gcn(embedding_dim=embedding_dim, adj=adj)
     pruning.add_mask(net_gcn)
     net_gcn = net_gcn.cuda()
     net_gcn.load_state_dict(rewind_weight_mask)
@@ -58,8 +67,7 @@ def run_fix_mask(args, seed, rewind_weight_mask):
     wgt_1 = net_gcn.net_layer[1].weight_mask_fixed.T
     feats = []
 
-    print('Wgt sparsity:', utils.count_sparsity(wgt_0), utils.count_sparsity(wgt_1))
-    print()
+    print('Wgt density:', utils.count_sparsity(wgt_0), utils.count_sparsity(wgt_1))
 
     for epoch in range(200):
 
@@ -96,6 +104,9 @@ def run_fix_mask(args, seed, rewind_weight_mask):
         #     "(Fix Mask) Epoch:[{}] Val:[{:.2f}] Test:[{:.2f}] | Final Val:[{:.2f}] Test:[{:.2f}] at Epoch:[{}]"
         #     .format(epoch, acc_val * 100, acc_test * 100, best_val_acc['val_acc'] * 100,
         #             best_val_acc['test_acc'] * 100, best_val_acc['epoch']))
+
+    print('Feat density:', utils.count_sparsity(feats[0]), utils.count_sparsity(feats[1]))
+    print()
 
     # Without pruning
     wgt_0_wo_pruning = torch.ones_like(wgt_0)
@@ -143,17 +154,26 @@ def run_fix_mask(args, seed, rewind_weight_mask):
 def run_get_mask(args, seed, imp_num, rewind_weight_mask=None):
 
     pruning.setup_seed(seed)
-    adj, features, labels, idx_train, idx_val, idx_test = load_data(args['dataset'])
+    # adj, features, labels, idx_train, idx_val, idx_test = load_data(args['dataset'])
+    adj, features, labels, idx_train, idx_val, idx_test, n_classes = utils.load_dataset(
+        args['dataset'])
 
-    node_num = features.size()[0]
-    class_num = labels.numpy().max() + 1
+    # node_num = features.size()[0]
+    # class_num = labels.numpy().max() + 1
 
     adj = adj.cuda()
     features = features.cuda()
     labels = labels.cuda()
     loss_func = nn.CrossEntropyLoss()
 
-    net_gcn = net.net_gcn(embedding_dim=args['embedding_dim'], adj=adj)
+    in_feats = features.shape[-1]
+    n_hidden = args['n_hidden']
+    embedding_dim = [in_feats]
+    embedding_dim += [n_hidden] * (args['n_layer'] - 2)
+    embedding_dim.append(n_classes)
+
+    # net_gcn = net.net_gcn(embedding_dim=args['embedding_dim'], adj=adj)
+    net_gcn = net.net_gcn(embedding_dim=embedding_dim, adj=adj)
     pruning.add_mask(net_gcn)
     net_gcn = net_gcn.cuda()
 
@@ -239,6 +259,8 @@ def parser_loader():
     parser.add_argument('--embedding-dim', nargs='+', type=int, default=[3703, 16, 6])
     parser.add_argument('--lr', type=float, default=0.01)
     parser.add_argument('--weight-decay', type=float, default=5e-4)
+    parser.add_argument('--n-hidden', type=int, default=128)
+    parser.add_argument('--n-layer', type=int, default=3)
     return parser
 
 
@@ -248,21 +270,31 @@ if __name__ == "__main__":
     args = vars(parser.parse_args())
     print(args)
 
-    args['dataset'] = 'cora'
-    args['embedding_dim'] = [1433, 16, 7]
+    # args['dataset'] = 'cora'
+    # args['embedding_dim'] = [1433, 128, 7]
     # args['dataset'] = 'citeseer'
     # args['embedding_dim'] = [3703, 128, 6]
+    # args['dataset'] = 'pubmed'
+    # args['embedding_dim'] = [3703, 128, 6]
 
+    # args['dataset'] = 'cora'
+    # args['dataset'] = 'citeseer'
+    args['dataset'] = 'pubmed'
+    # args['dataset'] = 'reddit'
+    # args['dataset'] = 'amazon_comp'
+
+    args['n_hidden'] = 128
+    args['n_layer'] = 3
     args['lr'] = 0.008
     args['weight_decay'] = 8e-5
-    args['pruning_percent_wei'] = 0.2
+    args['pruning_percent_wei'] = 0.3
     args['pruning_percent_adj'] = 0
     args['total_epoch'] = 200
     args['s1'] = 1e-2
     args['s2'] = 1e-2
     args['init_soft_mask_type'] = 'all_one'
 
-    seed_dict = {'cora': 2377, 'citeseer': 4428, 'pubmed': 3333}
+    seed_dict = {'cora': 2377, 'citeseer': 4428, 'pubmed': 3333, 'arxiv:': 8956, 'reddit': 9781, 'amazon_comp': 8763}
     seed = seed_dict[args['dataset']]
     rewind_weight = None
     for p in range(20):

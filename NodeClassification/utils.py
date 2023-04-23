@@ -9,6 +9,12 @@ import pdb
 import torch
 # import metis
 
+import dgl
+from dgl.data import CoraGraphDataset, CiteseerGraphDataset, PubmedGraphDataset, RedditDataset, AmazonCoBuyComputerDataset
+from dgl.data import AsNodePredDataset
+from ogb.nodeproppred import DglNodePropPredDataset
+from dgl import AddSelfLoop
+
 
 def parse_index_file(filename):
     """Parse index file."""
@@ -90,6 +96,48 @@ def load_data(dataset_str):
     idx_val = list(range(len(y), len(y) + 500))
 
     return adj, features, labels, idx_train, idx_val, idx_test
+
+
+def load_dataset(dataset_str):
+    transform = (AddSelfLoop()
+                 )  # by default, it will first remove self-loops to prevent duplication
+    if dataset_str == 'cora':
+        dataset = CoraGraphDataset(raw_dir='../dataset', transform=transform)
+    elif dataset_str == 'citeseer':
+        dataset = CiteseerGraphDataset(raw_dir='../dataset', transform=transform)
+    elif dataset_str == 'pubmed':
+        dataset = PubmedGraphDataset(raw_dir='../dataset', transform=transform)
+    elif dataset_str == 'reddit':
+        dataset = RedditDataset(raw_dir='../dataset', transform=transform)
+    elif dataset_str == 'ogbn-arxiv':
+        dataset = AsNodePredDataset(DglNodePropPredDataset('ogbn-arxiv', root='../dataset'))
+    # elif dataset_str == 'ogbn-mag':
+    #     dataset = DglNodePropPredDataset('ogbn-mag', root='../dataset')
+    # elif dataset_str == 'ogbn-products':
+    #     dataset = AsNodePredDataset(DglNodePropPredDataset('ogbn-products', root='../dataset'))
+    elif dataset_str == 'amazon_comp':
+        dataset = AmazonCoBuyComputerDataset(raw_dir='../dataset', transform=transform)
+    else:
+        raise ValueError('Unknown dataset: {}'.format(dataset_str))
+    
+    g = dataset[0]
+    adj = g.adj()
+    adj = adj.to_dense()
+    features = g.ndata['feat']
+    labels = g.ndata['label']
+    if dataset_str == 'amazon_comp':
+        n_classes = dataset.num_classes
+    else:
+        n_classes = dataset.num_labels
+    train_mask = g.ndata['train_mask']
+    val_mask = g.ndata['val_mask']
+    test_mask = g.ndata['test_mask']
+
+    idx_train = np.nonzero(train_mask).squeeze().tolist()
+    idx_val = np.nonzero(val_mask).squeeze().tolist()
+    idx_test = np.nonzero(test_mask).squeeze().tolist()
+
+    return adj, features, labels, idx_train, idx_val, idx_test, n_classes
 
 
 def sparse_to_tuple(sparse_mx):
