@@ -1,38 +1,52 @@
-import os
-import random
+# import os
+# import random
 import argparse
 
 import torch
+import torch as th
 import torch.nn as nn
 import numpy as np
 
 import net as net
-from utils import load_data
+# from utils import load_data
 from sklearn.metrics import f1_score
-import pdb
+# import pdb
 import pruning
 import copy
-from scipy.sparse import coo_matrix
+# from scipy.sparse import coo_matrix
 import warnings
 import utils
+import time
 
 warnings.filterwarnings('ignore')
 
 
-def run_fix_mask(args, seed, rewind_weight_mask):
+# def run_fix_mask(args, seed, rewind_weight_mask):
+def run_fix_mask(args, seed, rewind_weight_mask, adj, features, labels, idx_train, idx_val,
+                 idx_test, n_classes):
+
+    if args['gpu'] < 0:
+        cuda = False
+    else:
+        cuda = True
+        gpu_id = args['gpu']
+    device = th.device("cuda:" + str(gpu_id) if cuda else "cpu")
 
     pruning.setup_seed(seed)
 
-    # adj, features, labels, idx_train, idx_val, idx_test = load_data(args['dataset'])
-    adj, features, labels, idx_train, idx_val, idx_test, n_classes = utils.load_dataset(
-        args['dataset'])
+    # # adj, features, labels, idx_train, idx_val, idx_test = load_data(args['dataset'])
+    # adj, features, labels, idx_train, idx_val, idx_test, n_classes = utils.load_dataset(
+    #     args['dataset'])
 
     # node_num = features.size()[0]
     # class_num = labels.numpy().max() + 1
 
-    adj = adj.cuda()
-    features = features.cuda()
-    labels = labels.cuda()
+    # adj = adj.cuda()
+    # features = features.cuda()
+    # labels = labels.cuda()
+    adj = adj.to(device)
+    features = features.to(device)
+    labels = labels.to(device)
     loss_func = nn.CrossEntropyLoss()
 
     in_feats = features.shape[-1]
@@ -44,7 +58,8 @@ def run_fix_mask(args, seed, rewind_weight_mask):
     # net_gcn = net.net_gcn(embedding_dim=args['embedding_dim'], adj=adj)
     net_gcn = net.net_gcn(embedding_dim=embedding_dim, adj=adj)
     pruning.add_mask(net_gcn)
-    net_gcn = net_gcn.cuda()
+    # net_gcn = net_gcn.cuda()
+    net_gcn = net_gcn.to(device)
     net_gcn.load_state_dict(rewind_weight_mask)
     adj_spar, wei_spar = pruning.print_sparsity(net_gcn)
 
@@ -68,8 +83,9 @@ def run_fix_mask(args, seed, rewind_weight_mask):
     feats = []
 
     print('Wgt density:', utils.count_sparsity(wgt_0), utils.count_sparsity(wgt_1))
+    print()
 
-    for epoch in range(200):
+    for epoch in range(args['total_epoch']):
 
         optimizer.zero_grad()
         # output = net_gcn(features, adj)
@@ -151,19 +167,40 @@ def run_fix_mask(args, seed, rewind_weight_mask):
         'epoch'], adj_spar, wei_spar
 
 
-def run_get_mask(args, seed, imp_num, rewind_weight_mask=None):
+# def run_get_mask(args, seed, imp_num, rewind_weight_mask=None):
+def run_get_mask(args,
+                 seed,
+                 imp_num,
+                 adj,
+                 features,
+                 labels,
+                 idx_train,
+                 idx_val,
+                 idx_test,
+                 n_classes,
+                 rewind_weight_mask=None):
+
+    if args['gpu'] < 0:
+        cuda = False
+    else:
+        cuda = True
+        gpu_id = args['gpu']
+    device = th.device("cuda:" + str(gpu_id) if cuda else "cpu")
 
     pruning.setup_seed(seed)
-    # adj, features, labels, idx_train, idx_val, idx_test = load_data(args['dataset'])
-    adj, features, labels, idx_train, idx_val, idx_test, n_classes = utils.load_dataset(
-        args['dataset'])
+    # # adj, features, labels, idx_train, idx_val, idx_test = load_data(args['dataset'])
+    # adj, features, labels, idx_train, idx_val, idx_test, n_classes = utils.load_dataset(
+    #     args['dataset'])
 
     # node_num = features.size()[0]
     # class_num = labels.numpy().max() + 1
 
-    adj = adj.cuda()
-    features = features.cuda()
-    labels = labels.cuda()
+    # adj = adj.cuda()
+    # features = features.cuda()
+    # labels = labels.cuda()
+    adj = adj.to(device)
+    features = features.to(device)
+    labels = labels.to(device)
     loss_func = nn.CrossEntropyLoss()
 
     in_feats = features.shape[-1]
@@ -175,12 +212,14 @@ def run_get_mask(args, seed, imp_num, rewind_weight_mask=None):
     # net_gcn = net.net_gcn(embedding_dim=args['embedding_dim'], adj=adj)
     net_gcn = net.net_gcn(embedding_dim=embedding_dim, adj=adj)
     pruning.add_mask(net_gcn)
-    net_gcn = net_gcn.cuda()
+    # net_gcn = net_gcn.cuda()
+    net_gcn = net_gcn.to(device)
 
     if args['weight_dir']:
         print("load : {}".format(args['weight_dir']))
         encoder_weight = {}
-        cl_ckpt = torch.load(args['weight_dir'], map_location='cuda')
+        # cl_ckpt = torch.load(args['weight_dir'], map_location='cuda')
+        cl_ckpt = torch.load(args['weight_dir'], map_location=device)
         encoder_weight['weight_orig_weight'] = cl_ckpt['gcn.fc.weight']
         ori_state_dict = net_gcn.net_layer[0].state_dict()
         ori_state_dict.update(encoder_weight)
@@ -261,10 +300,13 @@ def parser_loader():
     parser.add_argument('--weight-decay', type=float, default=5e-4)
     parser.add_argument('--n-hidden', type=int, default=128)
     parser.add_argument('--n-layer', type=int, default=3)
+    parser.add_argument("--gpu", type=int, default=-1, help="gpu")
     return parser
 
 
 if __name__ == "__main__":
+    print('>> Task start time: ', time.strftime("%Y-%m-%d %H:%M:%S", time.localtime()))
+    Task_time_start = time.perf_counter()
 
     parser = parser_loader()
     args = vars(parser.parse_args())
@@ -283,23 +325,38 @@ if __name__ == "__main__":
     # args['dataset'] = 'reddit'
     # args['dataset'] = 'amazon_comp'
 
+    args['total_epoch'] = 20
+    args['gpu'] = -1
     args['n_hidden'] = 128
     args['n_layer'] = 3
     args['lr'] = 0.008
     args['weight_decay'] = 8e-5
     args['pruning_percent_wei'] = 0.3
     args['pruning_percent_adj'] = 0
-    args['total_epoch'] = 200
     args['s1'] = 1e-2
     args['s2'] = 1e-2
     args['init_soft_mask_type'] = 'all_one'
 
-    seed_dict = {'cora': 2377, 'citeseer': 4428, 'pubmed': 3333, 'arxiv:': 8956, 'reddit': 9781, 'amazon_comp': 8763}
+    seed_dict = {
+        'cora': 2377,
+        'citeseer': 4428,
+        'pubmed': 3333,
+        'arxiv:': 8956,
+        'reddit': 9781,
+        'amazon_comp': 8763
+    }
     seed = seed_dict[args['dataset']]
     rewind_weight = None
+
+    adj, features, labels, idx_train, idx_val, idx_test, n_classes = utils.load_dataset(
+        args['dataset'])
+
     for p in range(20):
 
-        final_mask_dict, rewind_weight = run_get_mask(args, seed, p, rewind_weight)
+        # final_mask_dict, rewind_weight = run_get_mask(args, seed, p, rewind_weight)
+        final_mask_dict, rewind_weight = run_get_mask(args, seed, p, adj, features, labels,
+                                                      idx_train, idx_val, idx_test, n_classes,
+                                                      rewind_weight)
 
         rewind_weight['adj_mask1_train'] = final_mask_dict['adj_mask']
         rewind_weight['adj_mask2_fixed'] = final_mask_dict['adj_mask']
@@ -308,11 +365,18 @@ if __name__ == "__main__":
         rewind_weight['net_layer.1.weight_mask_train'] = final_mask_dict['weight2_mask']
         rewind_weight['net_layer.1.weight_mask_fixed'] = final_mask_dict['weight2_mask']
 
+        # best_acc_val, final_acc_test, final_epoch_list, adj_spar, wei_spar = run_fix_mask(
+        #     args, seed, rewind_weight)
         best_acc_val, final_acc_test, final_epoch_list, adj_spar, wei_spar = run_fix_mask(
-            args, seed, rewind_weight)
+            args, seed, rewind_weight, adj, features, labels, idx_train, idx_val, idx_test,
+            n_classes)
+
         print("=" * 120)
         print(
             "syd : Sparsity:[{}], Best Val:[{:.2f}] at epoch:[{}] | Final Test Acc:[{:.2f}] Adj:[{:.2f}%] Wei:[{:.2f}%]"
             .format(p + 1, best_acc_val * 100, final_epoch_list, final_acc_test * 100, adj_spar,
                     wei_spar))
         print("=" * 120)
+
+    print('\n>> Task {:s} execution time: {}'.format(
+        args.dataset, utils.time_format(time.perf_counter() - Task_time_start)))

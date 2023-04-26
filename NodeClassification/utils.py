@@ -119,7 +119,7 @@ def load_dataset(dataset_str):
         dataset = AmazonCoBuyComputerDataset(raw_dir='../dataset', transform=transform)
     else:
         raise ValueError('Unknown dataset: {}'.format(dataset_str))
-    
+
     g = dataset[0]
     adj = g.adj()
     adj = adj.to_dense()
@@ -172,11 +172,14 @@ def preprocess_features(features):
 
 
 def torch_normalize_adj(adj):
-    adj = adj + torch.eye(adj.shape[0]).cuda()
+    # adj = adj + torch.eye(adj.shape[0]).cuda()
+    device = adj.device
+    adj = adj + torch.eye(adj.shape[0]).to(device)
     rowsum = adj.sum(1)
     d_inv_sqrt = torch.pow(rowsum, -0.5).flatten()
     d_inv_sqrt[torch.isinf(d_inv_sqrt)] = 0.0
-    d_mat_inv_sqrt = torch.diag(d_inv_sqrt).cuda()
+    # d_mat_inv_sqrt = torch.diag(d_inv_sqrt).cuda()
+    d_mat_inv_sqrt = torch.diag(d_inv_sqrt)
     return adj.mm(d_mat_inv_sqrt).t().mm(d_mat_inv_sqrt)
 
 
@@ -367,6 +370,21 @@ def count_sparsity(m):
     sparsity = round(num_nonzero / num_total, 3)
 
     return sparsity
+
+
+def time_format(sec):
+    if sec > 3600:
+        hour, tmp = divmod(sec, 3600)
+        min, s = divmod(tmp, 60)
+        time = str(int(hour)) + 'h' + str(int(min)) + 'm' + str(int(s)) + 's'
+    elif sec > 60:
+        min, s = divmod(sec, 60)
+        time = str(int(min)) + 'm' + str(int(s)) + 's'
+    else:
+        s = round(sec, 2)
+        time = str(s) + 's'
+
+    return time
 
 
 # def random_val():
