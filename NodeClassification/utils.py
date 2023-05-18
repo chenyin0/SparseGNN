@@ -109,7 +109,7 @@ def load_dataset(dataset_str):
         dataset = PubmedGraphDataset(raw_dir='../dataset', transform=transform)
     elif dataset_str == 'reddit':
         dataset = RedditDataset(raw_dir='../dataset', transform=transform)
-    elif dataset_str == 'ogbn-arxiv':
+    elif dataset_str == 'arxiv':
         dataset = AsNodePredDataset(DglNodePropPredDataset('ogbn-arxiv', root='../dataset'))
     # elif dataset_str == 'ogbn-mag':
     #     dataset = DglNodePropPredDataset('ogbn-mag', root='../dataset')

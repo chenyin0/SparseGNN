@@ -17,6 +17,8 @@ import copy
 import warnings
 import utils
 import time
+import logger
+import sys
 
 warnings.filterwarnings('ignore')
 
@@ -85,6 +87,9 @@ def run_fix_mask(args, seed, rewind_weight_mask, adj, features, labels, idx_trai
     print('Wgt density:', utils.count_sparsity(wgt_0), utils.count_sparsity(wgt_1))
     print()
 
+    # with open(log_file, 'wt') as f:
+    #     print('Wgt density:', utils.count_sparsity(wgt_0), utils.count_sparsity(wgt_1), file=f)
+
     for epoch in range(args['total_epoch']):
 
         optimizer.zero_grad()
@@ -124,6 +129,12 @@ def run_fix_mask(args, seed, rewind_weight_mask, adj, features, labels, idx_trai
     print('Feat density:', utils.count_sparsity(feats[0]), utils.count_sparsity(feats[1]))
     print()
 
+    # with open(log_file, 'wt') as f:
+    #     print('Feat density:',
+    #           utils.count_sparsity(feats[0]),
+    #           utils.count_sparsity(feats[1]),
+    #           file=f)
+
     # Without pruning
     wgt_0_wo_pruning = torch.ones_like(wgt_0)
     wgt_1_wo_pruning = torch.ones_like(wgt_1)
@@ -162,6 +173,30 @@ def run_fix_mask(args, seed, rewind_weight_mask, adj, features, labels, idx_trai
         .format(num_op_norm_layer_0_wo_pruning, num_op_norm_layer_1_wo_pruning,
                 num_op_norm_ax_w_layer_0, num_op_norm_ax_w_layer_1, num_op_norm_a_xw_layer_0,
                 num_op_norm_a_xw_layer_1))
+
+    # with open(log_file, 'wt') as f:
+    #     print(
+    #         'layer_0_wo: {:.3f}, layer_1_wo: {:.3f}\nlayer_0_ax_w: {:.3f}, layer_1_ax_w: {:.3f}\nlayer_0_a_xw: {:.3f}, layer_1_a_xw: {:.3f}'
+    #         .format(num_op_norm_layer_0_wo_pruning, num_op_norm_layer_1_wo_pruning,
+    #                 num_op_norm_ax_w_layer_0, num_op_norm_ax_w_layer_1, num_op_norm_a_xw_layer_0,
+    #                 num_op_norm_a_xw_layer_1),
+    #         file=f)
+
+    num_op_norm_wo_pruning = round((num_op_a_xw_0_wo_pruning + num_op_a_xw_1_wo_pruning) /
+                                   (num_op_ax_w_0_wo_pruning + num_op_ax_w_1_wo_pruning), 3)
+    num_op_norm_ax_w_pruning = round(
+        (num_op_ax_w_0 + num_op_ax_w_1) / (num_op_ax_w_0_wo_pruning + num_op_ax_w_1_wo_pruning), 3)
+    num_op_norm_a_xw_pruning = round(
+        (num_op_a_xw_0 + num_op_a_xw_1) / (num_op_ax_w_0_wo_pruning + num_op_ax_w_1_wo_pruning), 3)
+
+    print()
+    print('layer_wo: {:.3f}\nlayer_ax_w: {:.3f}\nlayer_a_xw: {:.3f}'.format(
+        num_op_norm_wo_pruning, num_op_norm_ax_w_pruning, num_op_norm_a_xw_pruning))
+
+    # with open(log_file, 'wt') as f:
+    #     print('layer_wo: {:.3f}\nlayer_ax_w: {:.3f}\nlayer_a_xw: {:.3f}'.format(
+    #         num_op_norm_wo_pruning, num_op_norm_ax_w_pruning, num_op_norm_a_xw_pruning),
+    #           file=f)
 
     return best_val_acc['val_acc'], best_val_acc['test_acc'], best_val_acc[
         'epoch'], adj_spar, wei_spar
@@ -319,19 +354,20 @@ if __name__ == "__main__":
     # args['dataset'] = 'pubmed'
     # args['embedding_dim'] = [3703, 128, 6]
 
-    # args['dataset'] = 'cora'
+    args['dataset'] = 'cora'
     # args['dataset'] = 'citeseer'
-    args['dataset'] = 'pubmed'
+    # args['dataset'] = 'pubmed'
+    # args['dataset'] = 'arxiv'
     # args['dataset'] = 'reddit'
     # args['dataset'] = 'amazon_comp'
 
-    args['total_epoch'] = 20
-    args['gpu'] = -1
-    args['n_hidden'] = 128
+    args['total_epoch'] = 200
+    args['gpu'] = 0
+    args['n_hidden'] = 512
     args['n_layer'] = 3
     args['lr'] = 0.008
     args['weight_decay'] = 8e-5
-    args['pruning_percent_wei'] = 0.3
+    args['pruning_percent_wei'] = 0.05
     args['pruning_percent_adj'] = 0
     args['s1'] = 1e-2
     args['s2'] = 1e-2
@@ -341,17 +377,23 @@ if __name__ == "__main__":
         'cora': 2377,
         'citeseer': 4428,
         'pubmed': 3333,
-        'arxiv:': 8956,
+        'arxiv': 8956,
         'reddit': 9781,
         'amazon_comp': 8763
     }
     seed = seed_dict[args['dataset']]
     rewind_weight = None
 
+    log_name = 'acc_gcn_' + args['dataset'] + '_' + time.strftime("%m%d_%H%M",
+                                                                  time.localtime()) + '.txt'
+    log_file = '../results/accuracy/' + log_name
+    # print(log_file)
+    sys.stdout = logger.Logger(log_file, sys.stdout)
+
     adj, features, labels, idx_train, idx_val, idx_test, n_classes = utils.load_dataset(
         args['dataset'])
 
-    for p in range(20):
+    for p in range(100):
 
         # final_mask_dict, rewind_weight = run_get_mask(args, seed, p, rewind_weight)
         final_mask_dict, rewind_weight = run_get_mask(args, seed, p, adj, features, labels,
@@ -379,4 +421,4 @@ if __name__ == "__main__":
         print("=" * 120)
 
     print('\n>> Task {:s} execution time: {}'.format(
-        args.dataset, utils.time_format(time.perf_counter() - Task_time_start)))
+        args['dataset'], utils.time_format(time.perf_counter() - Task_time_start)))
