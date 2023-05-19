@@ -152,7 +152,8 @@ def run_fix_mask(args, seed, rewind_weight_mask, adj, features, labels, idx_trai
     num_op_norm_layer_1_wo_pruning = round(num_op_a_xw_1_wo_pruning / num_op_ax_w_1_wo_pruning, 3)
 
     # With pruning
-    adj_pruning = torch.mul(adj, adj_mask)
+    # adj_pruning = torch.mul(adj, adj_mask)
+    adj_pruning = adj  # No graph structure pruning
     num_op_ax_w_0 = utils.op_count_ax_w(adj_pruning, feats[0], wgt_0)
     num_op_ax_w_1 = utils.op_count_ax_w(adj_pruning, feats[1], wgt_1) * 0.2
 
@@ -347,31 +348,36 @@ if __name__ == "__main__":
     args = vars(parser.parse_args())
     print(args)
 
-    # args['dataset'] = 'cora'
-    # args['embedding_dim'] = [1433, 128, 7]
-    # args['dataset'] = 'citeseer'
-    # args['embedding_dim'] = [3703, 128, 6]
-    # args['dataset'] = 'pubmed'
-    # args['embedding_dim'] = [3703, 128, 6]
-
     args['dataset'] = 'cora'
     # args['dataset'] = 'citeseer'
     # args['dataset'] = 'pubmed'
-    # args['dataset'] = 'arxiv'
     # args['dataset'] = 'reddit'
+    # args['dataset'] = 'arxiv'
     # args['dataset'] = 'amazon_comp'
 
     args['total_epoch'] = 200
     args['gpu'] = 0
     args['n_hidden'] = 512
     args['n_layer'] = 3
-    args['lr'] = 0.008
-    args['weight_decay'] = 8e-5
     args['pruning_percent_wei'] = 0.05
     args['pruning_percent_adj'] = 0
-    args['s1'] = 1e-2
-    args['s2'] = 1e-2
     args['init_soft_mask_type'] = 'all_one'
+
+    if args['dataset'] == 'cora':
+        args['lr'] = 0.008
+        args['weight_decay'] = 8e-5
+        args['s1'] = 1e-2
+        args['s2'] = 1e-2
+    elif args['dataset'] == 'citeseer':
+        args['lr'] = 0.01
+        args['weight_decay'] = 5e-4
+        args['s1'] = 1e-2
+        args['s2'] = 1e-2
+    elif args['dataset'] == 'pubmed':
+        args['lr'] = 0.01
+        args['weight_decay'] = 5e-4
+        args['s1'] = 1e-6
+        args['s2'] = 1e-3
 
     seed_dict = {
         'cora': 2377,
@@ -390,7 +396,7 @@ if __name__ == "__main__":
     # print(log_file)
     sys.stdout = logger.Logger(log_file, sys.stdout)
 
-    adj, features, labels, idx_train, idx_val, idx_test, n_classes = utils.load_dataset(
+    adj, features, labels, idx_train, idx_val, idx_test, n_classes, _ = utils.load_dataset(
         args['dataset'])
 
     for p in range(100):
