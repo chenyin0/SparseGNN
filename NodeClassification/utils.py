@@ -15,6 +15,8 @@ from dgl.data import AsNodePredDataset
 from ogb.nodeproppred import DglNodePropPredDataset
 from dgl import AddSelfLoop
 
+import copy
+
 
 def parse_index_file(filename):
     """Parse index file."""
@@ -137,7 +139,7 @@ def load_dataset(dataset_str):
     idx_val = np.nonzero(val_mask).squeeze().tolist()
     idx_test = np.nonzero(test_mask).squeeze().tolist()
 
-    return adj, features, labels, idx_train, idx_val, idx_test, n_classes
+    return adj, features, labels, idx_train, idx_val, idx_test, n_classes, g
 
 
 def sparse_to_tuple(sparse_mx):
