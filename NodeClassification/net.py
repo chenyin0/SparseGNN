@@ -51,6 +51,7 @@ class net_gcn(nn.Module):
         #adj = torch.mul(adj, self.adj_mask2_fixed)
 
         # feats = []  # Record features of each layer
+        self.feats = []  # Reset before each forward
         self.feats.append(x)
 
         for ln in range(self.layer_num):
@@ -70,6 +71,7 @@ class net_gcn(nn.Module):
             #     print('layer: {:d}, x_dense: {:.1f}'.format(ln, x_dense))
 
             if val_test:
+                self.feats.append(x)
                 continue
             x = self.dropout(x)
 
