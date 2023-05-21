@@ -8,10 +8,12 @@ import torch.nn as nn
 import numpy as np
 
 import net as net
+from gnns.sage_net import GraphSAGE
 # from utils import load_data
 from sklearn.metrics import f1_score
 # import pdb
 import pruning
+import pruning_sage
 import copy
 # from scipy.sparse import coo_matrix
 import warnings
@@ -25,7 +27,7 @@ warnings.filterwarnings('ignore')
 
 # def run_fix_mask(args, seed, rewind_weight_mask):
 def run_fix_mask(args, seed, rewind_weight_mask, adj, features, labels, idx_train, idx_val,
-                 idx_test, n_classes):
+                 idx_test, n_classes, edge_index):
 
     if args['gpu'] < 0:
         cuda = False
@@ -49,6 +51,7 @@ def run_fix_mask(args, seed, rewind_weight_mask, adj, features, labels, idx_trai
     adj = adj.to(device)
     features = features.to(device)
     labels = labels.to(device)
+    edge_index = edge_index.to(device)
     loss_func = nn.CrossEntropyLoss()
 
     in_feats = features.shape[-1]
@@ -58,12 +61,22 @@ def run_fix_mask(args, seed, rewind_weight_mask, adj, features, labels, idx_trai
     embedding_dim.append(n_classes)
 
     # net_gcn = net.net_gcn(embedding_dim=args['embedding_dim'], adj=adj)
-    net_gcn = net.net_gcn(embedding_dim=embedding_dim, adj=adj)
-    pruning.add_mask(net_gcn)
+    # net_gcn = net.net_gcn(embedding_dim=embedding_dim, adj=adj)
+    if args['net'] == 'gcn':
+        net_gcn = net.net_gcn(embedding_dim=embedding_dim, adj=adj)
+        pruning.add_mask(net_gcn)
+    elif args['net'] == 'graphsage':
+        net_gcn = GraphSAGE(embedding_dim=embedding_dim, adj=adj)
+        pruning_sage.add_mask(net_gcn)
+    # pruning.add_mask(net_gcn)
     # net_gcn = net_gcn.cuda()
     net_gcn = net_gcn.to(device)
     net_gcn.load_state_dict(rewind_weight_mask)
-    adj_spar, wei_spar = pruning.print_sparsity(net_gcn)
+    # adj_spar, wei_spar = pruning.print_sparsity(net_gcn)
+    if args['net'] == 'gcn':
+        adj_spar, wei_spar = pruning.print_sparsity(net_gcn)
+    elif args['net'] == 'graphsage':
+        adj_spar, wei_spar = pruning_sage.print_sparsity(net_gcn)
 
     # weight = net_gcn.net_layer[0].weight_mask_fixed
     # print(weight)
@@ -80,8 +93,12 @@ def run_fix_mask(args, seed, rewind_weight_mask, adj, features, labels, idx_trai
 
     # Record adj, wgt and feats
     adj_mask = net_gcn.adj_mask2_fixed
-    wgt_0 = net_gcn.net_layer[0].weight_mask_fixed.T
-    wgt_1 = net_gcn.net_layer[1].weight_mask_fixed.T
+    if args['net'] == 'gcn':
+        wgt_0 = net_gcn.net_layer[0].weight_mask_fixed.T
+        wgt_1 = net_gcn.net_layer[1].weight_mask_fixed.T
+    elif args['net'] == 'graphsage':
+        wgt_0 = net_gcn.net_layer[0].lin_l.weight_mask_fixed.T
+        wgt_1 = net_gcn.net_layer[1].lin_l.weight_mask_fixed.T
     feats = []
 
     print('Wgt density:', utils.count_sparsity(wgt_0), utils.count_sparsity(wgt_1))
@@ -94,12 +111,18 @@ def run_fix_mask(args, seed, rewind_weight_mask, adj, features, labels, idx_trai
 
         optimizer.zero_grad()
         # output = net_gcn(features, adj)
-        output = net_gcn(features, adj)
+        if args['net'] == 'gcn':
+            output = net_gcn(features, adj)
+        elif args['net'] == 'graphsage':
+            output = net_gcn(features, edge_index)
         loss = loss_func(output[idx_train], labels[idx_train])
         loss.backward()
         optimizer.step()
         with torch.no_grad():
-            output = net_gcn(features, adj, val_test=True)
+            if args['net'] == 'gcn':
+                output = net_gcn(features, adj, val_test=True)
+            elif args['net'] == 'graphsage':
+                output = net_gcn(features, edge_index)
             acc_val = f1_score(labels[idx_val].cpu().numpy(),
                                output[idx_val].cpu().numpy().argmax(axis=1),
                                average='micro')
@@ -214,6 +237,7 @@ def run_get_mask(args,
                  idx_val,
                  idx_test,
                  n_classes,
+                 edge_index,
                  rewind_weight_mask=None):
 
     if args['gpu'] < 0:
@@ -237,6 +261,7 @@ def run_get_mask(args,
     adj = adj.to(device)
     features = features.to(device)
     labels = labels.to(device)
+    edge_index = edge_index.to(device)
     loss_func = nn.CrossEntropyLoss()
 
     in_feats = features.shape[-1]
@@ -246,8 +271,14 @@ def run_get_mask(args,
     embedding_dim.append(n_classes)
 
     # net_gcn = net.net_gcn(embedding_dim=args['embedding_dim'], adj=adj)
-    net_gcn = net.net_gcn(embedding_dim=embedding_dim, adj=adj)
-    pruning.add_mask(net_gcn)
+    # net_gcn = net.net_gcn(embedding_dim=embedding_dim, adj=adj)
+    if args['net'] == 'gcn':
+        net_gcn = net.net_gcn(embedding_dim=embedding_dim, adj=adj)
+        pruning.add_mask(net_gcn)
+    elif args['net'] == 'graphsage':
+        net_gcn = GraphSAGE(embedding_dim=embedding_dim, adj=adj)
+        pruning_sage.add_mask(net_gcn)
+    # pruning.add_mask(net_gcn)
     # net_gcn = net_gcn.cuda()
     net_gcn = net_gcn.to(device)
 
@@ -264,10 +295,22 @@ def run_get_mask(args,
     if rewind_weight_mask:
         net_gcn.load_state_dict(rewind_weight_mask)
         if not args['rewind_soft_mask'] or args['init_soft_mask_type'] == 'all_one':
-            pruning.soft_mask_init(net_gcn, args['init_soft_mask_type'], seed)
-        adj_spar, wei_spar = pruning.print_sparsity(net_gcn)
+            # pruning.soft_mask_init(net_gcn, args['init_soft_mask_type'], seed)
+            if args['net'] == 'gcn':
+                pruning.soft_mask_init(net_gcn, args['init_soft_mask_type'], seed)
+            elif args['net'] == 'graphsage':
+                pruning_sage.soft_mask_init(net_gcn, args['init_soft_mask_type'], seed)
+        # adj_spar, wei_spar = pruning.print_sparsity(net_gcn)
+        if args['net'] == 'gcn':
+            adj_spar, wei_spar = pruning.print_sparsity(net_gcn)
+        elif args['net'] == 'graphsage':
+            adj_spar, wei_spar = pruning_sage.print_sparsity(net_gcn)
     else:
-        pruning.soft_mask_init(net_gcn, args['init_soft_mask_type'], seed)
+        # pruning.soft_mask_init(net_gcn, args['init_soft_mask_type'], seed)
+        if args['net'] == 'gcn':
+            pruning.soft_mask_init(net_gcn, args['init_soft_mask_type'], seed)
+        elif args['net'] == 'graphsage':
+            pruning_sage.soft_mask_init(net_gcn, args['init_soft_mask_type'], seed)
 
     optimizer = torch.optim.Adam(net_gcn.parameters(),
                                  lr=args['lr'],
@@ -279,13 +322,26 @@ def run_get_mask(args,
     for epoch in range(args['total_epoch']):
 
         optimizer.zero_grad()
-        output = net_gcn(features, adj)
+        # output = net_gcn(features, adj)
+        if args['net'] == 'gcn':
+            output = net_gcn(features, adj)
+        elif args['net'] == 'graphsage':
+            output = net_gcn(features, edge_index)
+
         loss = loss_func(output[idx_train], labels[idx_train])
         loss.backward()
-        pruning.subgradient_update_mask(net_gcn, args)  # l1 norm
+        # pruning.subgradient_update_mask(net_gcn, args)  # l1 norm
+        if args['net'] == 'gcn':
+            pruning.subgradient_update_mask(net_gcn, args)  # l1 norm
+        elif args['net'] == 'graphsage':
+            pruning_sage.subgradient_update_mask(net_gcn, args)  # l1 norm
         optimizer.step()
         with torch.no_grad():
-            output = net_gcn(features, adj, val_test=True)
+            # output = net_gcn(features, adj, val_test=True)
+            if args['net'] == 'gcn':
+                output = net_gcn(features, adj, val_test=True)
+            elif args['net'] == 'graphsage':
+                output = net_gcn(features, edge_index)
             acc_val = f1_score(labels[idx_val].cpu().numpy(),
                                output[idx_val].cpu().numpy().argmax(axis=1),
                                average='micro')
@@ -296,10 +352,20 @@ def run_get_mask(args,
                 best_val_acc['test_acc'] = acc_test
                 best_val_acc['val_acc'] = acc_val
                 best_val_acc['epoch'] = epoch
-                best_epoch_mask = pruning.get_final_mask_epoch(
-                    net_gcn,
-                    adj_percent=args['pruning_percent_adj'],
-                    wei_percent=args['pruning_percent_wei'])
+                # best_epoch_mask = pruning.get_final_mask_epoch(
+                #     net_gcn,
+                #     adj_percent=args['pruning_percent_adj'],
+                #     wei_percent=args['pruning_percent_wei'])
+                if args['net'] == 'gcn':
+                    best_epoch_mask = pruning.get_final_mask_epoch(
+                        net_gcn,
+                        adj_percent=args['pruning_percent_adj'],
+                        wei_percent=args['pruning_percent_wei'])
+                elif args['net'] == 'graphsage':
+                    best_epoch_mask = pruning_sage.get_final_mask_epoch(
+                        net_gcn,
+                        adj_percent=args['pruning_percent_adj'],
+                        wei_percent=args['pruning_percent_wei'])
 
             # print(
             #     "(Get Mask) Epoch:[{}] Val:[{:.2f}] Test:[{:.2f}] | Best Val:[{:.2f}] Test:[{:.2f}] at Epoch:[{}]"
@@ -337,6 +403,7 @@ def parser_loader():
     parser.add_argument('--n-hidden', type=int, default=128)
     parser.add_argument('--n-layer', type=int, default=3)
     parser.add_argument("--gpu", type=int, default=-1, help="gpu")
+    parser.add_argument('--net', type=str, default='')
     return parser
 
 
@@ -348,8 +415,11 @@ if __name__ == "__main__":
     args = vars(parser.parse_args())
     print(args)
 
-    args['dataset'] = 'cora'
-    # args['dataset'] = 'citeseer'
+    # args['net'] = 'gcn'
+    args['net'] = 'graphsage'
+
+    # args['dataset'] = 'cora'
+    args['dataset'] = 'citeseer'
     # args['dataset'] = 'pubmed'
     # args['dataset'] = 'reddit'
     # args['dataset'] = 'arxiv'
@@ -390,13 +460,13 @@ if __name__ == "__main__":
     seed = seed_dict[args['dataset']]
     rewind_weight = None
 
-    log_name = 'acc_gcn_' + args['dataset'] + '_' + time.strftime("%m%d_%H%M",
-                                                                  time.localtime()) + '.txt'
+    log_name = 'acc_' + args['net'] + '_' + args['dataset'] + '_' + time.strftime(
+        "%m%d_%H%M", time.localtime()) + '.txt'
     log_file = '../results/accuracy/' + log_name
     # print(log_file)
     sys.stdout = logger.Logger(log_file, sys.stdout)
 
-    adj, features, labels, idx_train, idx_val, idx_test, n_classes, _ = utils.load_dataset(
+    adj, features, labels, idx_train, idx_val, idx_test, n_classes, g, edge_index = utils.load_dataset(
         args['dataset'])
 
     for p in range(100):
@@ -404,20 +474,28 @@ if __name__ == "__main__":
         # final_mask_dict, rewind_weight = run_get_mask(args, seed, p, rewind_weight)
         final_mask_dict, rewind_weight = run_get_mask(args, seed, p, adj, features, labels,
                                                       idx_train, idx_val, idx_test, n_classes,
-                                                      rewind_weight)
+                                                      edge_index, rewind_weight)
 
-        rewind_weight['adj_mask1_train'] = final_mask_dict['adj_mask']
-        rewind_weight['adj_mask2_fixed'] = final_mask_dict['adj_mask']
-        rewind_weight['net_layer.0.weight_mask_train'] = final_mask_dict['weight1_mask']
-        rewind_weight['net_layer.0.weight_mask_fixed'] = final_mask_dict['weight1_mask']
-        rewind_weight['net_layer.1.weight_mask_train'] = final_mask_dict['weight2_mask']
-        rewind_weight['net_layer.1.weight_mask_fixed'] = final_mask_dict['weight2_mask']
+        if args['net'] == 'gcn':
+            rewind_weight['adj_mask1_train'] = final_mask_dict['adj_mask']
+            rewind_weight['adj_mask2_fixed'] = final_mask_dict['adj_mask']
+            rewind_weight['net_layer.0.weight_mask_train'] = final_mask_dict['weight1_mask']
+            rewind_weight['net_layer.0.weight_mask_fixed'] = final_mask_dict['weight1_mask']
+            rewind_weight['net_layer.1.weight_mask_train'] = final_mask_dict['weight2_mask']
+            rewind_weight['net_layer.1.weight_mask_fixed'] = final_mask_dict['weight2_mask']
+        elif args['net'] == 'graphsage':
+            rewind_weight['adj_mask1_train'] = final_mask_dict['adj_mask']
+            rewind_weight['adj_mask2_fixed'] = final_mask_dict['adj_mask']
+            rewind_weight['net_layer.0.lin_l.weight_mask_train'] = final_mask_dict['weight1_mask']
+            rewind_weight['net_layer.0.lin_l.weight_mask_fixed'] = final_mask_dict['weight1_mask']
+            rewind_weight['net_layer.1.lin_l.weight_mask_train'] = final_mask_dict['weight2_mask']
+            rewind_weight['net_layer.1.lin_l.weight_mask_fixed'] = final_mask_dict['weight2_mask']
 
         # best_acc_val, final_acc_test, final_epoch_list, adj_spar, wei_spar = run_fix_mask(
         #     args, seed, rewind_weight)
         best_acc_val, final_acc_test, final_epoch_list, adj_spar, wei_spar = run_fix_mask(
             args, seed, rewind_weight, adj, features, labels, idx_train, idx_val, idx_test,
-            n_classes)
+            n_classes, edge_index)
 
         print("=" * 120)
         print(

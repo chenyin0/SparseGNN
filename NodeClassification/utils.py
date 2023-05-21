@@ -139,7 +139,12 @@ def load_dataset(dataset_str):
     idx_val = np.nonzero(val_mask).squeeze().tolist()
     idx_test = np.nonzero(test_mask).squeeze().tolist()
 
-    return adj, features, labels, idx_train, idx_val, idx_test, n_classes, g
+    edges = g.all_edges()
+    edge_src = edges[0]
+    edge_dst = edges[1]
+    edge_index = torch.stack([edge_src, edge_dst], dim=0)
+
+    return adj, features, labels, idx_train, idx_val, idx_test, n_classes, g, edge_index
 
 
 def sparse_to_tuple(sparse_mx):
