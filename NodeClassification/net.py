@@ -57,7 +57,7 @@ class net_gcn(nn.Module):
         for ln in range(self.layer_num):
             x = torch.mm(adj, x)
             x = self.net_layer[ln](x)
-            
+
             # if ln == self.layer_num - 1:
             #     break
             x = self.relu(x)

@@ -4,8 +4,8 @@ import torch.nn as nn
 from .sage_layer import SAGEConv
 import torch.nn.functional as F
 # from tqdm import tqdm
-from NodeClassification import utils
-
+# from NodeClassification import utils
+import utils
 
 class GraphSAGE(nn.Module):
 
