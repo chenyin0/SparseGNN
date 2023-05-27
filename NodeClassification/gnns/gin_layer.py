@@ -8,8 +8,8 @@ import pdb
     HOW POWERFUL ARE GRAPH NEURAL NETWORKS? (Keyulu Xu, Weihua Hu, Jure Leskovec and Stefanie Jegelka, ICLR 2019)
     https://arxiv.org/pdf/1810.00826.pdf
 """
-msg_mask = fn.src_mul_edge('h', 'mask', 'm')
-# msg_mask = fn.u_mul_e('h', 'mask', 'm')
+# msg_mask = fn.src_mul_edge('h', 'mask', 'm')  # fn.src_mul_edge is discarded after DGL v1.1.x
+msg_mask = fn.u_mul_e('h', 'mask', 'm')
 msg_orig = fn.copy_u('h', 'm')
 
 class GINLayer(nn.Module):
