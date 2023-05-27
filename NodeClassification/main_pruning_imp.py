@@ -214,8 +214,12 @@ def run_fix_mask(args, seed, rewind_weight_mask, adj, features, labels, idx_trai
         (num_op_a_xw_0 + num_op_a_xw_1) / (num_op_ax_w_0_wo_pruning + num_op_ax_w_1_wo_pruning), 3)
 
     print()
-    print('layer_wo: {:.3f}\nlayer_ax_w: {:.3f}\nlayer_a_xw: {:.3f}'.format(
-        num_op_norm_wo_pruning, num_op_norm_ax_w_pruning, num_op_norm_a_xw_pruning))
+    if num_op_norm_ax_w_pruning != 0.0 and num_op_norm_a_xw_pruning != 0.0:
+        print(
+            'layer_wo: {:.3f}\nlayer_ax_w: {:.3f} reduction: {:.2f}\nlayer_a_xw: {:.3f} reduction: {:.2f}'
+            .format(num_op_norm_wo_pruning, num_op_norm_ax_w_pruning,
+                    num_op_norm_wo_pruning / num_op_norm_ax_w_pruning, num_op_norm_a_xw_pruning,
+                    num_op_norm_wo_pruning / num_op_norm_a_xw_pruning))
 
     # with open(log_file, 'wt') as f:
     #     print('layer_wo: {:.3f}\nlayer_ax_w: {:.3f}\nlayer_a_xw: {:.3f}'.format(
@@ -415,18 +419,25 @@ if __name__ == "__main__":
     args = vars(parser.parse_args())
     print(args)
 
+    # from dgl.data import SBMMixtureDataset
+    # dataset = SBMMixtureDataset(n_graphs=1, n_nodes=8396, n_communities=60, avg_deg=5.5)
+
     # args['net'] = 'gcn'
-    args['net'] = 'graphsage'
+    # args['net'] = 'graphsage'
 
     # args['dataset'] = 'cora'
-    args['dataset'] = 'citeseer'
+    # args['dataset'] = 'citeseer'
+    # args['dataset'] = 'chameleon'
+    # args['dataset'] = 'wikics'
     # args['dataset'] = 'pubmed'
+    # args['dataset'] = 'SBM-10000'
+    # args['dataset'] = 'aifb'
     # args['dataset'] = 'reddit'
     # args['dataset'] = 'arxiv'
     # args['dataset'] = 'amazon_comp'
 
     args['total_epoch'] = 200
-    args['gpu'] = 0
+    args['gpu'] = 1
     args['n_hidden'] = 512
     args['n_layer'] = 3
     args['pruning_percent_wei'] = 0.05
@@ -455,7 +466,11 @@ if __name__ == "__main__":
         'pubmed': 3333,
         'arxiv': 8956,
         'reddit': 9781,
-        'amazon_comp': 8763
+        'amazon_comp': 8763,
+        'SBM-10000': 6759,
+        'aifb': 5896,
+        'chameleon': 4869,
+        'wikics': 7859
     }
     seed = seed_dict[args['dataset']]
     rewind_weight = None

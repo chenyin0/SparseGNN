@@ -136,10 +136,13 @@ def run_fix_mask(args, imp_num, rewind_weight_mask, g, adj, features, labels, id
         #             best_val_acc['val_acc'] * 100, best_val_acc['test_acc'] * 100,
         #             best_val_acc['epoch']))
 
-    print(
-        "syd final: [{},{}] IMP[{}] (Fix Mask) Final Val:[{:.2f}] Test:[{:.2f}] at Epoch:[{}] | Adj:[{:.2f}%] Wei:[{:.2f}%]"
-        .format(args['dataset'], args['net'], imp_num, best_val_acc['val_acc'] * 100,
-                best_val_acc['test_acc'] * 100, best_val_acc['epoch'], adj_spar, wei_spar))
+    # print(
+    #     "syd final: [{},{}] IMP[{}] (Fix Mask) Final Val:[{:.2f}] Test:[{:.2f}] at Epoch:[{}] | Adj:[{:.2f}%] Wei:[{:.2f}%]"
+    #     .format(args['dataset'], args['net'], imp_num, best_val_acc['val_acc'] * 100,
+    #             best_val_acc['test_acc'] * 100, best_val_acc['epoch'], adj_spar, wei_spar))
+
+    print('Feat density:', utils.count_sparsity(feats[0]), utils.count_sparsity(feats[1]))
+    print()
 
     # Without pruning
     wgt_0_wo_pruning = torch.ones_like(wgt_0)
@@ -197,8 +200,14 @@ def run_fix_mask(args, imp_num, rewind_weight_mask, g, adj, features, labels, id
         (num_op_a_xw_0 + num_op_a_xw_1) / (num_op_ax_w_0_wo_pruning + num_op_ax_w_1_wo_pruning), 3)
 
     print()
-    print('layer_wo: {:.3f}\nlayer_ax_w: {:.3f}\nlayer_a_xw: {:.3f}'.format(
-        num_op_norm_wo_pruning, num_op_norm_ax_w_pruning, num_op_norm_a_xw_pruning))
+    # print('layer_wo: {:.3f}\nlayer_ax_w: {:.3f}\nlayer_a_xw: {:.3f}'.format(
+    #     num_op_norm_wo_pruning, num_op_norm_ax_w_pruning, num_op_norm_a_xw_pruning))
+    if num_op_norm_ax_w_pruning != 0.0 and num_op_norm_a_xw_pruning != 0.0:
+        print(
+            'layer_wo: {:.3f}\nlayer_ax_w: {:.3f} reduction: {:.2f}\nlayer_a_xw: {:.3f} reduction: {:.2f}'
+            .format(num_op_norm_wo_pruning, num_op_norm_ax_w_pruning,
+                    num_op_norm_wo_pruning / num_op_norm_ax_w_pruning, num_op_norm_a_xw_pruning,
+                    num_op_norm_wo_pruning / num_op_norm_a_xw_pruning))
 
     # with open(log_file, 'wt') as f:
     #     print('layer_wo: {:.3f}\nlayer_ax_w: {:.3f}\nlayer_a_xw: {:.3f}'.format(
@@ -361,12 +370,14 @@ if __name__ == "__main__":
     args = vars(parser.parse_args())
     print(args)
 
-    args['net'] = 'gin'
+    # args['net'] = 'gin'
     # args['net'] = 'gat'
 
     # args['dataset'] = 'cora'
-    args['dataset'] = 'citeseer'
-    #  args['dataset'] = 'pubmed'
+    # args['dataset'] = 'citeseer'
+    # args['dataset'] = 'chameleon'
+    # args['dataset'] = 'wikics'
+    # args['dataset'] = 'pubmed'
     # args['dataset'] = 'reddit'
     # args['dataset'] = 'arxiv'
     # args['dataset'] = 'amazon_comp'
@@ -430,7 +441,7 @@ if __name__ == "__main__":
     # print(log_file)
     sys.stdout = logger.Logger(log_file, sys.stdout)
 
-    adj, features, labels, idx_train, idx_val, idx_test, n_classes, g = utils.load_dataset(
+    adj, features, labels, idx_train, idx_val, idx_test, n_classes, g, edge_index = utils.load_dataset(
         args['dataset'])
 
     for imp in range(100):

@@ -5,13 +5,16 @@ import scipy.sparse as sp
 # from scipy.sparse.linalg.eigen.arpack import eigsh
 from scipy.sparse.linalg import eigsh
 import sys
-import pdb
+# import pdb
 import torch
 # import metis
 
-import dgl
-from dgl.data import CoraGraphDataset, CiteseerGraphDataset, PubmedGraphDataset, RedditDataset, AmazonCoBuyComputerDataset
+# import dgl
+from dgl.data import CoraGraphDataset, CiteseerGraphDataset, PubmedGraphDataset, RedditDataset, AmazonCoBuyComputerDataset, SBMMixtureDataset
 from dgl.data import AsNodePredDataset
+from dgl.data import ChameleonDataset
+from dgl.data import WikiCSDataset
+from dgl.data.rdf import AIFBDataset
 from ogb.nodeproppred import DglNodePropPredDataset
 from dgl import AddSelfLoop
 
@@ -119,21 +122,55 @@ def load_dataset(dataset_str):
     #     dataset = AsNodePredDataset(DglNodePropPredDataset('ogbn-products', root='../dataset'))
     elif dataset_str == 'amazon_comp':
         dataset = AmazonCoBuyComputerDataset(raw_dir='../dataset', transform=transform)
+    elif dataset_str == 'SBM-10000':
+        # dataset = SBMMixtureDataset(n_graphs=16, n_nodes=8396, n_communities=60, avg_deg=5.5)
+        dataset = SBMMixtureDataset(n_graphs=1, n_nodes=10000, n_communities=20, avg_deg=6)
+    elif dataset_str == 'aifb':
+        # dataset = SBMMixtureDataset(n_graphs=16, n_nodes=8396, n_communities=60, avg_deg=5.5)
+        dataset = AIFBDataset()
+    elif dataset_str == 'chameleon':
+        dataset = ChameleonDataset(raw_dir='../dataset', transform=transform)
+    elif dataset_str == 'wikics':
+        dataset = WikiCSDataset(raw_dir='../dataset', transform=transform)
     else:
         raise ValueError('Unknown dataset: {}'.format(dataset_str))
 
     g = dataset[0]
     adj = g.adj()
     adj = adj.to_dense()
+
     features = g.ndata['feat']
     labels = g.ndata['label']
-    if dataset_str == 'amazon_comp':
+    if dataset_str == 'amazon_comp' or dataset_str == 'chameleon' or dataset_str == 'wikics':
         n_classes = dataset.num_classes
     else:
         n_classes = dataset.num_labels
-    train_mask = g.ndata['train_mask']
-    val_mask = g.ndata['val_mask']
-    test_mask = g.ndata['test_mask']
+
+    if dataset_str == 'chameleon':
+        train_mask = g.ndata['train_mask'][:, 0]
+        val_mask = g.ndata['val_mask'][:, 0]
+        test_mask = g.ndata['test_mask'][:, 0]
+    elif dataset_str == 'wikics':
+        train_mask = g.ndata['train_mask'][:, 0]
+        val_mask = g.ndata['val_mask'][:, 0]
+        test_mask = g.ndata['test_mask']
+    else:
+        train_mask = g.ndata['train_mask']
+        val_mask = g.ndata['val_mask']
+        test_mask = g.ndata['test_mask']
+
+    # if dataset_str == 'chameleon':
+    #     idx_train = [n for n in range(0, 1092)]
+    #     idx_val = [n for n in range(1092, 1821)]
+    #     idx_test = [n for n in range(1821, 2277)]
+    # elif dataset_str == 'wikics':
+    #     idx_train = [n for n in range(0, 1092)]
+    #     idx_val = [n for n in range(1092, 1821)]
+    #     idx_test = [n for n in range(1821, 2277)]
+    # else:
+    #     idx_train = np.nonzero(train_mask).squeeze().tolist()
+    #     idx_val = np.nonzero(val_mask).squeeze().tolist()
+    #     idx_test = np.nonzero(test_mask).squeeze().tolist()
 
     idx_train = np.nonzero(train_mask).squeeze().tolist()
     idx_val = np.nonzero(val_mask).squeeze().tolist()
