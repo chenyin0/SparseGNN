@@ -359,6 +359,7 @@ def parser_loader():
     parser.add_argument('--weight-decay', type=float, default=5e-4)
     parser.add_argument('--net', type=str, default='')
     parser.add_argument('--seed', type=int, default=666)
+    parser.add_argument("--gpu", type=int, default=-1, help="gpu")
     return parser
 
 
@@ -376,6 +377,8 @@ if __name__ == "__main__":
     # args['dataset'] = 'cora'
     # args['dataset'] = 'citeseer'
     # args['dataset'] = 'chameleon'
+    # args['dataset'] = 'actor'
+    # args['dataset'] = 'squirrel'
     # args['dataset'] = 'wikics'
     # args['dataset'] = 'pubmed'
     # args['dataset'] = 'reddit'
@@ -383,7 +386,7 @@ if __name__ == "__main__":
     # args['dataset'] = 'amazon_comp'
 
     args['total_epoch'] = 200
-    args['gpu'] = 0
+    # args['gpu'] = 0
     args['n_hidden'] = 512
     args['n_layer'] = 3
     args['pruning_percent_wei'] = 0.05

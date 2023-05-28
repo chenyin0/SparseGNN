@@ -14,6 +14,8 @@ from dgl.data import CoraGraphDataset, CiteseerGraphDataset, PubmedGraphDataset,
 from dgl.data import AsNodePredDataset
 from dgl.data import ChameleonDataset
 from dgl.data import WikiCSDataset
+from dgl.data import SquirrelDataset
+from dgl.data import ActorDataset
 from dgl.data.rdf import AIFBDataset
 from ogb.nodeproppred import DglNodePropPredDataset
 from dgl import AddSelfLoop
@@ -132,6 +134,10 @@ def load_dataset(dataset_str):
         dataset = ChameleonDataset(raw_dir='../dataset', transform=transform)
     elif dataset_str == 'wikics':
         dataset = WikiCSDataset(raw_dir='../dataset', transform=transform)
+    elif dataset_str == 'squirrel':
+        dataset = SquirrelDataset(raw_dir='../dataset', transform=transform)
+    elif dataset_str == 'actor':
+        dataset = ActorDataset(raw_dir='../dataset', transform=transform)
     else:
         raise ValueError('Unknown dataset: {}'.format(dataset_str))
 
@@ -141,12 +147,12 @@ def load_dataset(dataset_str):
 
     features = g.ndata['feat']
     labels = g.ndata['label']
-    if dataset_str == 'amazon_comp' or dataset_str == 'chameleon' or dataset_str == 'wikics':
+    if dataset_str == 'amazon_comp' or dataset_str == 'chameleon' or dataset_str == 'wikics' or dataset_str == 'squirrel' or dataset_str == 'actor':
         n_classes = dataset.num_classes
     else:
         n_classes = dataset.num_labels
 
-    if dataset_str == 'chameleon':
+    if dataset_str == 'chameleon' or dataset_str == 'squirrel' or dataset_str == 'actor':
         train_mask = g.ndata['train_mask'][:, 0]
         val_mask = g.ndata['val_mask'][:, 0]
         test_mask = g.ndata['test_mask'][:, 0]

@@ -428,16 +428,16 @@ if __name__ == "__main__":
     # args['dataset'] = 'cora'
     # args['dataset'] = 'citeseer'
     # args['dataset'] = 'chameleon'
+    # args['dataset'] = 'actor'
+    # args['dataset'] = 'squirrel'
     # args['dataset'] = 'wikics'
     # args['dataset'] = 'pubmed'
-    # args['dataset'] = 'SBM-10000'
-    # args['dataset'] = 'aifb'
     # args['dataset'] = 'reddit'
     # args['dataset'] = 'arxiv'
     # args['dataset'] = 'amazon_comp'
 
     args['total_epoch'] = 200
-    args['gpu'] = 1
+    # args['gpu'] = 0
     args['n_hidden'] = 512
     args['n_layer'] = 3
     args['pruning_percent_wei'] = 0.05
@@ -470,7 +470,9 @@ if __name__ == "__main__":
         'SBM-10000': 6759,
         'aifb': 5896,
         'chameleon': 4869,
-        'wikics': 7859
+        'wikics': 7859,
+        'squirrel': 6021,
+        'actor': 2026
     }
     seed = seed_dict[args['dataset']]
     rewind_weight = None
