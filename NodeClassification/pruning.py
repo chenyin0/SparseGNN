@@ -209,6 +209,7 @@ def get_final_mask_epoch(model, adj_percent, wei_percent):
     mask_dict['weight1_mask'] = get_each_mask(model.net_layer[0].state_dict()['weight_mask_train'], wei_thre)
     mask_dict['weight2_mask'] = get_each_mask(model.net_layer[1].state_dict()['weight_mask_train'], wei_thre)
 
+
     return mask_dict
 
 ######### ADMM get weight mask ##########

@@ -21,6 +21,7 @@ from ogb.nodeproppred import DglNodePropPredDataset
 from dgl import AddSelfLoop
 
 import copy
+import matplotlib.pyplot as plt
 
 
 def parse_index_file(filename):
@@ -147,7 +148,7 @@ def load_dataset(dataset_str):
 
     features = g.ndata['feat']
     labels = g.ndata['label']
-    if dataset_str == 'amazon_comp' or dataset_str == 'chameleon' or dataset_str == 'wikics' or dataset_str == 'squirrel' or dataset_str == 'actor':
+    if dataset_str == 'amazon_comp' or dataset_str == 'chameleon' or dataset_str == 'wikics' or dataset_str == 'squirrel' or dataset_str == 'actor' or dataset_str == 'arxiv':
         n_classes = dataset.num_classes
     else:
         n_classes = dataset.num_labels
@@ -459,3 +460,11 @@ def time_format(sec):
 #         for i in a:
 #             f.write(i)
 #             f.write('\n')
+
+
+def plot_val_distribution(data, file_name):
+    data = data.view(data.numel())
+    data = data.cpu().numpy().tolist()
+    plt.hist(data, bins=100)
+    plt.savefig('./figures/' + file_name + '.jpg')
+    plt.close()

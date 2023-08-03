@@ -72,6 +72,12 @@ def run_fix_mask(args, seed, rewind_weight_mask, adj, features, labels, idx_trai
     # net_gcn = net_gcn.cuda()
     net_gcn = net_gcn.to(device)
     net_gcn.load_state_dict(rewind_weight_mask)
+
+    # module = net_gcn.net_layer[0]
+    # print(list(module.named_parameters()))
+    # print(list(module.named_buffers()))
+    # print(module._forward_pre_hooks)
+
     # adj_spar, wei_spar = pruning.print_sparsity(net_gcn)
     if args['net'] == 'gcn':
         adj_spar, wei_spar = pruning.print_sparsity(net_gcn)
@@ -121,6 +127,7 @@ def run_fix_mask(args, seed, rewind_weight_mask, adj, features, labels, idx_trai
         with torch.no_grad():
             if args['net'] == 'gcn':
                 output = net_gcn(features, adj, val_test=True)
+                # output = net_gcn(features, adj)
             elif args['net'] == 'graphsage':
                 output = net_gcn(features, edge_index)
             acc_val = f1_score(labels[idx_val].cpu().numpy(),
@@ -129,12 +136,20 @@ def run_fix_mask(args, seed, rewind_weight_mask, adj, features, labels, idx_trai
             acc_test = f1_score(labels[idx_test].cpu().numpy(),
                                 output[idx_test].cpu().numpy().argmax(axis=1),
                                 average='micro')
+            # print(acc_val)
             if acc_val > best_val_acc['val_acc']:
+                # print()
+                # print(acc_val, best_val_acc['val_acc'])
+
                 best_val_acc['val_acc'] = acc_val
                 best_val_acc['test_acc'] = acc_test
                 best_val_acc['epoch'] = epoch
 
                 feats = net_gcn.feats
+
+                # print()
+                # for i in range(len(feats)):
+                #     print(i, utils.count_sparsity(feats[i]))
 
                 # feat_total = output.numel()
                 # zeros = torch.zeros_like(output)
@@ -225,6 +240,24 @@ def run_fix_mask(args, seed, rewind_weight_mask, adj, features, labels, idx_trai
     #     print('layer_wo: {:.3f}\nlayer_ax_w: {:.3f}\nlayer_a_xw: {:.3f}'.format(
     #         num_op_norm_wo_pruning, num_op_norm_ax_w_pruning, num_op_norm_a_xw_pruning),
     #           file=f)
+
+    # # Print weight and bais distribution
+    # module = net_gcn
+    # f_0 = net_gcn.feats[0]
+    # f_1 = net_gcn.feats[1]
+    # # print(f_0.cpu().numpy().tolist())
+    # print()
+    # print(f_1.cpu().numpy().tolist())
+    # w_0 = getattr(module.net_layer[0], 'weight')
+    # w_1 = getattr(module.net_layer[1], 'weight')
+    # # bias_0 = getattr(module.net_layer[0], 'bias')
+    # # bias_1 = getattr(module.net_layer[1], 'bias')
+    # utils.plot_val_distribution(f_0, 'f_0')
+    # utils.plot_val_distribution(f_1, 'f_1')
+    # utils.plot_val_distribution(w_0, 'w_0')
+    # utils.plot_val_distribution(w_1, 'w_1')
+    # # utils.plot_val_distribution(bias_0, 'b_0')
+    # # utils.plot_val_distribution(bias_1, 'b_1')
 
     return best_val_acc['val_acc'], best_val_acc['test_acc'], best_val_acc[
         'epoch'], adj_spar, wei_spar
@@ -422,10 +455,10 @@ if __name__ == "__main__":
     # from dgl.data import SBMMixtureDataset
     # dataset = SBMMixtureDataset(n_graphs=1, n_nodes=8396, n_communities=60, avg_deg=5.5)
 
-    # args['net'] = 'gcn'
+    args['net'] = 'gcn'
     # args['net'] = 'graphsage'
 
-    # args['dataset'] = 'cora'
+    args['dataset'] = 'cora'
     # args['dataset'] = 'citeseer'
     # args['dataset'] = 'chameleon'
     # args['dataset'] = 'actor'
@@ -437,10 +470,10 @@ if __name__ == "__main__":
     # args['dataset'] = 'amazon_comp'
 
     args['total_epoch'] = 200
-    # args['gpu'] = 0
-    args['n_hidden'] = 512
+    args['gpu'] = 0
+    args['n_hidden'] = 32
     args['n_layer'] = 3
-    args['pruning_percent_wei'] = 0.05
+    args['pruning_percent_wei'] = 0.2
     args['pruning_percent_adj'] = 0
     args['init_soft_mask_type'] = 'all_one'
 
@@ -485,6 +518,8 @@ if __name__ == "__main__":
 
     adj, features, labels, idx_train, idx_val, idx_test, n_classes, g, edge_index = utils.load_dataset(
         args['dataset'])
+
+    # print(utils.count_sparsity(features))
 
     for p in range(100):
 

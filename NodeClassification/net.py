@@ -54,13 +54,32 @@ class net_gcn(nn.Module):
         self.feats = []  # Reset before each forward
         self.feats.append(x)
 
+        # w0 = getattr(self.net_layer[0], 'weight')
+        # w1 = getattr(self.net_layer[1], 'weight')
+        # spar_w0 = utils.count_sparsity(w0)
+        # spar_w1 = utils.count_sparsity(w1)
+        # print()
+        # print('spar_weight:', spar_w0, spar_w1)
+
         for ln in range(self.layer_num):
-            x = torch.mm(adj, x)
+            # x = torch.mm(adj, x)
+            # w_spar = utils.count_sparsity(getattr(self.net_layer[ln], 'weight'))
+            # spar_x_pre = utils.count_sparsity(x)
             x = self.net_layer[ln](x)
+            # spar_x_after = utils.count_sparsity(x)
+            # print('spar: ', spar_x_pre, w_spar, spar_x_after)
+            x = torch.mm(adj, x)
 
             # if ln == self.layer_num - 1:
             #     break
+
+            # spar_x_pre = utils.count_sparsity(x)
+            # utils.plot_val_distribution(x, 'x_pre_relu')
             x = self.relu(x)
+            # utils.plot_val_distribution(x, 'x_after_relu')
+            
+            # spar_x_after = utils.count_sparsity(x)
+            # print('spar_x', spar_x_pre, spar_x_after)
 
             # if val_test:
             #     x_total = x.numel()
@@ -78,6 +97,9 @@ class net_gcn(nn.Module):
 
             self.feats.append(x)
 
+            # for i in self.feats:
+            #     print(utils.count_sparsity(i))
+
             # x_total = x.numel()
             # zeros = torch.zeros_like(x)
             # ones = torch.ones_like(x)
@@ -85,6 +107,12 @@ class net_gcn(nn.Module):
             # x_nonzero = x_nonzero_norm.sum().item()
             # x_dense = x_nonzero * 100 / x_total
             # print('layer: {:d}, x_dense: {:.1f}'.format(ln, x_dense))
+
+        # feat0 = self.feats[0]
+        # feat1 = self.feats[1]
+        # spar_feat0 = utils.count_sparsity(feat0)
+        # spar_feat1 = utils.count_sparsity(feat1)
+        # print('spar_feat: ', spar_feat0, spar_feat1)
 
         return x
 
