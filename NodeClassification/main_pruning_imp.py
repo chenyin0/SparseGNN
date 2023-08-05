@@ -458,23 +458,23 @@ if __name__ == "__main__":
     args['net'] = 'gcn'
     # args['net'] = 'graphsage'
 
-    args['dataset'] = 'cora'
+    # args['dataset'] = 'cora'
     # args['dataset'] = 'citeseer'
     # args['dataset'] = 'chameleon'
     # args['dataset'] = 'actor'
     # args['dataset'] = 'squirrel'
     # args['dataset'] = 'wikics'
     # args['dataset'] = 'pubmed'
-    # args['dataset'] = 'reddit'
+    args['dataset'] = 'reddit'
     # args['dataset'] = 'arxiv'
     # args['dataset'] = 'amazon_comp'
 
     args['total_epoch'] = 200
     args['gpu'] = 0
-    args['n_hidden'] = 32
+    args['n_hidden'] = 512
     args['n_layer'] = 3
     args['pruning_percent_wei'] = 0.2
-    args['pruning_percent_adj'] = 0
+    args['pruning_percent_adj'] = 0.2
     args['init_soft_mask_type'] = 'all_one'
 
     if args['dataset'] == 'cora':

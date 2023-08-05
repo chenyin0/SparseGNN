@@ -18,35 +18,29 @@ class net_gcn(nn.Module):
         self.relu = nn.ReLU(inplace=True)
         self.dropout = nn.Dropout(p=0.5)
         self.adj_nonzero = torch.nonzero(adj, as_tuple=False).shape[0]
-        self.adj_mask1_train = nn.Parameter(self.generate_adj_mask(adj))
-        self.adj_mask2_fixed = nn.Parameter(self.generate_adj_mask(adj), requires_grad=False)
+        # self.adj_mask1_train = nn.Parameter(self.generate_adj_mask(adj))
+        # self.adj_mask2_fixed = nn.Parameter(self.generate_adj_mask(adj), requires_grad=False)
+
+        ################
+        # Debug_yin_feat Replace adj_mask to feature mask
+        vertex_num = adj.shape[0]
+        # Only set mask for the 2nd-layer's features
+        self.adj_mask1_train = nn.Parameter(self.generate_feat_mask(vertex_num, embedding_dim[1]))
+        self.adj_mask2_fixed = nn.Parameter(self.generate_feat_mask(vertex_num, embedding_dim[1]),
+                                            requires_grad=False)
+        ################
+
         self.normalize = utils.torch_normalize_adj
 
         self.feats = []  # Record features of each layer
 
-    # def forward(self, x, adj, val_test=False):
-
-    #     adj = torch.mul(adj, self.adj_mask1_train)
-    #     adj = torch.mul(adj, self.adj_mask2_fixed)
-    #     adj = self.normalize(adj)
-    #     #adj = torch.mul(adj, self.adj_mask2_fixed)
-    #     for ln in range(self.layer_num):
-    #         x = torch.mm(adj, x)
-    #         x = self.net_layer[ln](x)
-    #         if ln == self.layer_num - 1:
-    #             break
-    #         x = self.relu(x)
-
-    #         if val_test:
-    #             continue
-    #         x = self.dropout(x)
-
-    #     return x
-
     def forward(self, x, adj, val_test=False):
 
-        adj = torch.mul(adj, self.adj_mask1_train)
-        adj = torch.mul(adj, self.adj_mask2_fixed)
+        ################
+        # adj = torch.mul(adj, self.adj_mask1_train)
+        # adj = torch.mul(adj, self.adj_mask2_fixed)
+        ################
+
         adj = self.normalize(adj)
         #adj = torch.mul(adj, self.adj_mask2_fixed)
 
@@ -65,19 +59,32 @@ class net_gcn(nn.Module):
             # x = torch.mm(adj, x)
             # w_spar = utils.count_sparsity(getattr(self.net_layer[ln], 'weight'))
             # spar_x_pre = utils.count_sparsity(x)
+
+            ##########
+            # Only add mask on features of the 2nd layer
+            if ln == 1:
+                x = torch.mul(x, self.adj_mask1_train)
+                x = torch.mul(x, self.adj_mask2_fixed)
+            ##########
+
             x = self.net_layer[ln](x)
             # spar_x_after = utils.count_sparsity(x)
             # print('spar: ', spar_x_pre, w_spar, spar_x_after)
-            x = torch.mm(adj, x)
+            x = torch.mm(adj, x)  # (AX)W -> A(XW)
 
-            # if ln == self.layer_num - 1:
-            #     break
+            if ln < self.layer_num - 1:
+                x = self.relu(x)
+
+                if not val_test:
+                    x = self.dropout(x)
+
+            self.feats.append(x)
 
             # spar_x_pre = utils.count_sparsity(x)
             # utils.plot_val_distribution(x, 'x_pre_relu')
-            x = self.relu(x)
+            # x = self.relu(x)
             # utils.plot_val_distribution(x, 'x_after_relu')
-            
+
             # spar_x_after = utils.count_sparsity(x)
             # print('spar_x', spar_x_pre, spar_x_after)
 
@@ -90,12 +97,12 @@ class net_gcn(nn.Module):
             #     x_dense = x_nonzero * 100 / x_total
             #     print('layer: {:d}, x_dense: {:.1f}'.format(ln, x_dense))
 
-            if val_test:
-                self.feats.append(x)
-                continue
-            x = self.dropout(x)
+            # if val_test:
+            #     self.feats.append(x)
+            #     continue
+            # x = self.dropout(x)
 
-            self.feats.append(x)
+            # self.feats.append(x)
 
             # for i in self.feats:
             #     print(utils.count_sparsity(i))
@@ -122,6 +129,10 @@ class net_gcn(nn.Module):
         zeros = torch.zeros_like(sparse_adj)
         ones = torch.ones_like(sparse_adj)
         mask = torch.where(sparse_adj != 0, ones, zeros)
+        return mask
+
+    def generate_feat_mask(self, vertex_num, embedding_dim):
+        mask = torch.ones([vertex_num, embedding_dim])
         return mask
 
 

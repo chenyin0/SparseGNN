@@ -8,8 +8,10 @@ import matplotlib.pyplot as plt
 import pdb
 import torch.nn.init as init
 import math
+
+
 # net_gcn.ginlayers[0].apply_func.mlp.linear
-# 
+#
 # def soft_threshold(w, th):
 # 	'''
 # 	pytorch soft-sign function
@@ -20,11 +22,11 @@ import math
 # 		# print('temp:', temp.size())
 # 		return torch.sign(w) * nn.functional.relu(temp)
 def prune_adj(oriadj, non_zero_idx, percent):
-    
-    original_prune_num = int((non_zero_idx / 2) * (percent/100))
+
+    original_prune_num = int((non_zero_idx / 2) * (percent / 100))
     adj = np.copy(oriadj)
     #print("percent:", percent)
-    low_adj= np.tril(adj, -1)
+    low_adj = np.tril(adj, -1)
     non_zero_low_adj = low_adj[low_adj != 0]
     low_pcen = np.percentile(abs(non_zero_low_adj), percent)
     #print("percentile " + str(low_pcen))
@@ -46,6 +48,7 @@ def prune_adj(oriadj, non_zero_idx, percent):
 
     return adj
 
+
 def setup_seed(seed):
 
     torch.manual_seed(seed)
@@ -58,10 +61,10 @@ def setup_seed(seed):
 class AddTrainableMask(ABC):
 
     _tensor_name: str
-    
+
     def __init__(self):
         pass
-    
+
     def __call__(self, module, inputs):
 
         setattr(module, self._tensor_name, self.apply_mask(module))
@@ -71,14 +74,14 @@ class AddTrainableMask(ABC):
         mask_train = getattr(module, self._tensor_name + "_mask_train")
         mask_fixed = getattr(module, self._tensor_name + "_mask_fixed")
         orig_weight = getattr(module, self._tensor_name + "_orig_weight")
-        pruned_weight = mask_train * mask_fixed * orig_weight 
-        
+        pruned_weight = mask_train * mask_fixed * orig_weight
+
         return pruned_weight
 
     @classmethod
     def apply(cls, module, name, mask_train, mask_fixed, *args, **kwargs):
 
-        method = cls(*args, **kwargs)  
+        method = cls(*args, **kwargs)
         method._tensor_name = name
         orig = getattr(module, name)
 
@@ -96,12 +99,12 @@ class AddTrainableMask(ABC):
 def add_mask(model, init_mask_dict=None):
 
     if init_mask_dict is None:
-        
+
         mask1_train = nn.Parameter(torch.ones_like(model.net_layer[0].weight))
         mask1_fixed = nn.Parameter(torch.ones_like(model.net_layer[0].weight), requires_grad=False)
         mask2_train = nn.Parameter(torch.ones_like(model.net_layer[1].weight))
         mask2_fixed = nn.Parameter(torch.ones_like(model.net_layer[1].weight), requires_grad=False)
-        
+
     else:
         mask1_train = nn.Parameter(init_mask_dict['mask1_train'])
         mask1_fixed = nn.Parameter(init_mask_dict['mask1_fixed'], requires_grad=False)
@@ -110,8 +113,8 @@ def add_mask(model, init_mask_dict=None):
 
     AddTrainableMask.apply(model.net_layer[0], 'weight', mask1_train, mask1_fixed)
     AddTrainableMask.apply(model.net_layer[1], 'weight', mask2_train, mask2_fixed)
- 
-        
+
+
 def generate_mask(model):
 
     mask_dict = {}
@@ -124,31 +127,45 @@ def generate_mask(model):
 def subgradient_update_mask(model, args):
 
     model.adj_mask1_train.grad.data.add_(args['s1'] * torch.sign(model.adj_mask1_train.data))
-    model.net_layer[0].weight_mask_train.grad.data.add_(args['s2'] * torch.sign(model.net_layer[0].weight_mask_train.data))
-    model.net_layer[1].weight_mask_train.grad.data.add_(args['s2'] * torch.sign(model.net_layer[1].weight_mask_train.data))
+    model.net_layer[0].weight_mask_train.grad.data.add_(
+        args['s2'] * torch.sign(model.net_layer[0].weight_mask_train.data))
+    model.net_layer[1].weight_mask_train.grad.data.add_(
+        args['s2'] * torch.sign(model.net_layer[1].weight_mask_train.data))
 
 
 def get_mask_distribution(model, if_numpy=True):
 
     adj_mask_tensor = model.adj_mask1_train.flatten()
     nonzero = torch.abs(adj_mask_tensor) > 0
-    adj_mask_tensor = adj_mask_tensor[nonzero] # 13264 - 2708
+    adj_mask_tensor = adj_mask_tensor[nonzero]  # 13264 - 2708
 
-    weight_mask_tensor0 = model.net_layer[0].weight_mask_train.flatten()    # 22928
+    weight_mask_tensor0 = model.net_layer[0].weight_mask_train.flatten()  # 22928
     nonzero = torch.abs(weight_mask_tensor0) > 0
     weight_mask_tensor0 = weight_mask_tensor0[nonzero]
 
-    weight_mask_tensor1 = model.net_layer[1].weight_mask_train.flatten()    # 22928
+    weight_mask_tensor1 = model.net_layer[1].weight_mask_train.flatten()  # 22928
     nonzero = torch.abs(weight_mask_tensor1) > 0
     weight_mask_tensor1 = weight_mask_tensor1[nonzero]
 
-    weight_mask_tensor = torch.cat([weight_mask_tensor0, weight_mask_tensor1]) # 112
+    weight_mask_tensor = torch.cat([weight_mask_tensor0, weight_mask_tensor1])  # 112
     # np.savez('mask', adj_mask=adj_mask_tensor.detach().cpu().numpy(), weight_mask=weight_mask_tensor.detach().cpu().numpy())
     if if_numpy:
         return adj_mask_tensor.detach().cpu().numpy(), weight_mask_tensor.detach().cpu().numpy()
     else:
         return adj_mask_tensor.detach().cpu(), weight_mask_tensor.detach().cpu()
-    
+
+
+def get_feat_mask_distribution(model, if_numpy=True):
+
+    feat_mask_tensor = torch.cumsum(model.adj_mask1_train.abs(), dim=0)[-1]
+    nonzero = torch.abs(feat_mask_tensor) > 0
+    feat_mask_tensor = feat_mask_tensor[nonzero]  # 13264 - 2708
+
+    if if_numpy:
+        return feat_mask_tensor.detach().cpu().numpy()
+    else:
+        return feat_mask_tensor.detach().cpu()
+
 
 def plot_mask_distribution(model, epoch, acc_test, path):
 
@@ -157,13 +174,13 @@ def plot_mask_distribution(model, epoch, acc_test, path):
     adj_mask, weight_mask = get_mask_distribution(model)
 
     plt.figure(figsize=(15, 5))
-    plt.subplot(1,2,1)
+    plt.subplot(1, 2, 1)
     plt.hist(adj_mask)
     plt.title("adj mask")
     plt.xlabel('mask value')
     plt.ylabel('times')
 
-    plt.subplot(1,2,2)
+    plt.subplot(1, 2, 2)
     plt.hist(weight_mask)
     plt.title("weight mask")
     plt.xlabel('mask value')
@@ -173,21 +190,36 @@ def plot_mask_distribution(model, epoch, acc_test, path):
 
 
 def get_each_mask(mask_weight_tensor, threshold):
-    
-    ones  = torch.ones_like(mask_weight_tensor)
-    zeros = torch.zeros_like(mask_weight_tensor) 
+
+    ones = torch.ones_like(mask_weight_tensor)
+    zeros = torch.zeros_like(mask_weight_tensor)
     mask = torch.where(mask_weight_tensor.abs() > threshold, ones, zeros)
     return mask
 
+
+def get_feat_mask(mask_tensor, feat_mask_sum, threshold):
+
+    # mask = mask_tensor.clone().detach()
+    mask = torch.ones_like(mask_tensor)
+    for i, feat_sum in enumerate(feat_mask_sum):
+        if feat_sum < threshold:
+            mask[:, i] = 0
+
+    # print(mask.tolist()[0])
+
+    return mask
+
+
 def get_each_mask_admm(mask_weight_tensor, threshold):
-    
-    zeros = torch.zeros_like(mask_weight_tensor) 
+
+    zeros = torch.zeros_like(mask_weight_tensor)
     mask = torch.where(mask_weight_tensor.abs() > threshold, mask_weight_tensor, zeros)
     return mask
 
+
 ##### pruning remain mask percent #######
 def get_final_mask_epoch(model, adj_percent, wei_percent):
-    
+
     adj_mask, wei_mask = get_mask_distribution(model, if_numpy=False)
     #adj_mask.add_((2 * torch.rand(adj_mask.shape) - 1) * 1e-5)
     adj_total = adj_mask.shape[0]
@@ -198,24 +230,36 @@ def get_final_mask_epoch(model, adj_percent, wei_percent):
     ### get threshold
     adj_thre_index = int(adj_total * adj_percent)
     adj_thre = adj_y[adj_thre_index]
-    
+
     wei_thre_index = int(wei_total * wei_percent)
     wei_thre = wei_y[wei_thre_index]
+
+    #######
+    feat_mask_sum = get_feat_mask_distribution(model, if_numpy=False)
+    feat_total = feat_mask_sum.shape[0]
+    ### sort
+    feat_y, feat_i = torch.sort(feat_mask_sum)
+    ### get threshold
+    feat_thre_index = int(feat_total * adj_percent)
+    feat_thre = feat_y[feat_thre_index]
+    #######
 
     mask_dict = {}
     ori_adj_mask = model.adj_mask1_train.detach().cpu()
     # ori_adj_mask.add_((2 * torch.rand(ori_adj_mask.shape) - 1) * 1e-5)
-    mask_dict['adj_mask'] = get_each_mask(ori_adj_mask, adj_thre)
-    mask_dict['weight1_mask'] = get_each_mask(model.net_layer[0].state_dict()['weight_mask_train'], wei_thre)
-    mask_dict['weight2_mask'] = get_each_mask(model.net_layer[1].state_dict()['weight_mask_train'], wei_thre)
-
+    # mask_dict['adj_mask'] = get_each_mask(ori_adj_mask, adj_thre)
+    mask_dict['adj_mask'] = get_feat_mask(ori_adj_mask, feat_mask_sum, feat_thre)
+    mask_dict['weight1_mask'] = get_each_mask(model.net_layer[0].state_dict()['weight_mask_train'],
+                                              wei_thre)
+    mask_dict['weight2_mask'] = get_each_mask(model.net_layer[1].state_dict()['weight_mask_train'],
+                                              wei_thre)
 
     return mask_dict
+
 
 ######### ADMM get weight mask ##########
 def get_final_weight_mask_epoch(model, wei_percent):
 
-    
     weight1 = model.net_layer[0].weight_orig_weight.detach().cpu().flatten()
     weight2 = model.net_layer[1].weight_orig_weight.detach().cpu().flatten()
 
@@ -223,13 +267,15 @@ def get_final_weight_mask_epoch(model, wei_percent):
 
     wei_y, wei_i = torch.sort(weight_mask_tensor.abs())
     wei_total = weight_mask_tensor.shape[0]
-    
+
     wei_thre_index = int(wei_total * wei_percent)
     wei_thre = wei_y[wei_thre_index]
 
     mask_dict = {}
-    mask_dict['weight1_mask'] = get_each_mask(model.net_layer[0].state_dict()['weight_orig_weight'], wei_thre)
-    mask_dict['weight2_mask'] = get_each_mask(model.net_layer[1].state_dict()['weight_orig_weight'], wei_thre)
+    mask_dict['weight1_mask'] = get_each_mask(model.net_layer[0].state_dict()['weight_orig_weight'],
+                                              wei_thre)
+    mask_dict['weight2_mask'] = get_each_mask(model.net_layer[1].state_dict()['weight_orig_weight'],
+                                              wei_thre)
 
     return mask_dict
 
@@ -251,7 +297,6 @@ def oneshot_weight_magnitude_pruning(model, wei_percent):
     weight2_mask = get_each_mask(model.net_layer[1].state_dict()['weight_mask_train'], wei_thre)
 
     return mask_dict
-
 
 
 ##### random pruning #######
@@ -284,20 +329,20 @@ def random_pruning(model, adj_percent, wei_percent):
     for i, j in adj_pruned:
         model.adj_mask1_train[i][j] = 0
         model.adj_mask2_fixed[i][j] = 0
-    
+
     for i, j in wei1_pruned:
         model.net_layer[0].weight_mask_train[i][j] = 0
         model.net_layer[0].weight_mask_fixed[i][j] = 0
-    
+
     for i, j in wei2_pruned:
         model.net_layer[1].weight_mask_train[i][j] = 0
         model.net_layer[1].weight_mask_fixed[i][j] = 0
-    
+
     model.adj_mask1_train.requires_grad = True
     model.net_layer[0].weight_mask_train.requires_grad = True
     model.net_layer[1].weight_mask_train.requires_grad = True
 
-    
+
 def print_sparsity(model):
 
     adj_nonzero = model.adj_nonzero
@@ -314,11 +359,11 @@ def print_sparsity(model):
 
     wei_spar = weight_nonzero * 100 / weight_total
     print("-" * 100)
-    print("Sparsity: Adj:[{:.2f}%] Wei:[{:.2f}%]"
-    .format(adj_spar, wei_spar))
+    print("Sparsity: Adj:[{:.2f}%] Wei:[{:.2f}%]".format(adj_spar, wei_spar))
     print("-" * 100)
 
     return adj_spar, wei_spar
+
 
 def print_weight_sparsity(model):
 
@@ -341,19 +386,19 @@ def print_weight_sparsity(model):
 def load_only_mask(model, all_ckpt):
 
     model_state_dict = model.state_dict()
-    masks_state_dict = {k : v for k, v in all_ckpt.items() if 'mask' in k}
+    masks_state_dict = {k: v for k, v in all_ckpt.items() if 'mask' in k}
     model_state_dict.update(masks_state_dict)
     model.load_state_dict(model_state_dict)
 
 
 def add_trainable_mask_noise(model, c):
-    
+
     model.adj_mask1_train.requires_grad = False
     model.net_layer[0].weight_mask_train.requires_grad = False
     model.net_layer[1].weight_mask_train.requires_grad = False
 
     rand1 = (2 * torch.rand(model.adj_mask1_train.shape) - 1) * c
-    rand1 = rand1.to(model.adj_mask1_train.device) 
+    rand1 = rand1.to(model.adj_mask1_train.device)
     rand1 = rand1 * model.adj_mask1_train
     model.adj_mask1_train.add_(rand1)
 
@@ -371,14 +416,14 @@ def add_trainable_mask_noise(model, c):
     model.net_layer[0].weight_mask_train.requires_grad = True
     model.net_layer[1].weight_mask_train.requires_grad = True
 
-    
+
 def soft_mask_init(model, init_type, seed):
 
     setup_seed(seed)
     if init_type == 'all_one':
         add_trainable_mask_noise(model, c=1e-5)
     elif init_type == 'kaiming':
-        
+
         init.kaiming_uniform_(model.adj_mask1_train, a=math.sqrt(5))
         # init.constant_(model.adj_mask1_train, 1.0)
         model.adj_mask1_train.requires_grad = False
@@ -395,7 +440,6 @@ def soft_mask_init(model, init_type, seed):
         model.net_layer[1].weight_mask_train.requires_grad = False
         model.net_layer[1].weight_mask_train.mul_(model.net_layer[1].weight_mask_fixed)
         model.net_layer[1].weight_mask_train.requires_grad = True
-
 
     elif init_type == 'normal':
         mean = 1.0
@@ -437,7 +481,3 @@ def soft_mask_init(model, init_type, seed):
 
     else:
         assert False
-
-    
-
-
