@@ -8,6 +8,7 @@ import sys
 # import pdb
 import torch
 # import metis
+import gc
 
 # import dgl
 from dgl.data import CoraGraphDataset, CiteseerGraphDataset, PubmedGraphDataset, RedditDataset, AmazonCoBuyComputerDataset, SBMMixtureDataset
@@ -231,7 +232,11 @@ def torch_normalize_adj(adj):
     d_inv_sqrt[torch.isinf(d_inv_sqrt)] = 0.0
     # d_mat_inv_sqrt = torch.diag(d_inv_sqrt).cuda()
     d_mat_inv_sqrt = torch.diag(d_inv_sqrt)
-    return adj.mm(d_mat_inv_sqrt).t().mm(d_mat_inv_sqrt)
+    # return adj.mm(d_mat_inv_sqrt).t().mm(d_mat_inv_sqrt)
+
+    adj_sp = adj.to_sparse()
+    d_mat_inv_sqrt_sp = d_mat_inv_sqrt.to_sparse()
+    return torch.sparse.mm(torch.sparse.mm(adj_sp, d_mat_inv_sqrt_sp).t(), d_mat_inv_sqrt_sp)
 
 
 def normalize_adj(adj):
@@ -385,6 +390,31 @@ def op_count_a_xw(adj, feat, weight):
 
 #     return num_mul + num_add
 
+# def op_count(mat_a, mat_b):
+#     mat_a = mat_a.clone().detach()
+#     mat_b = mat_b.clone().detach()
+
+#     mat_a_zeros = torch.zeros_like(mat_a, dtype=torch.uint8)
+#     mat_a_ones = torch.ones_like(mat_a, dtype=torch.uint8)
+#     mat_a_nonzero = torch.where(mat_a != 0, mat_a_ones, mat_a_zeros)
+
+#     mat_b_zeros = torch.zeros_like(mat_b, dtype=torch.uint8)
+#     mat_b_ones = torch.ones_like(mat_b, dtype=torch.uint8)
+#     mat_b_nonzero = torch.where(mat_b != 0, mat_b_ones, mat_b_zeros)
+
+#     mat_b_nonzero = mat_b_nonzero.t()
+
+#     num_mul = 0
+#     num_add = 0
+
+#     for i in range(mat_b_nonzero.shape[0]):
+#         partial = torch.mul(mat_a_nonzero, mat_b_nonzero[i])
+#         num_nonzero = partial.sum().item()
+#         num_mul += num_nonzero
+#         num_add += num_nonzero
+
+#     return num_mul + num_add
+
 
 def op_count(mat_a, mat_b):
     mat_a = mat_a.clone().detach()
@@ -398,18 +428,15 @@ def op_count(mat_a, mat_b):
     mat_b_ones = torch.ones_like(mat_b, dtype=torch.uint8)
     mat_b_nonzero = torch.where(mat_b != 0, mat_b_ones, mat_b_zeros)
 
-    mat_b_nonzero = mat_b_nonzero.t()
+    del mat_a_zeros, mat_a_ones, mat_b_zeros, mat_b_ones
+    gc.collect()
 
-    num_mul = 0
-    num_add = 0
+    mat_a_nonzero = mat_a_nonzero.float()
+    mat_b_nonzero = mat_b_nonzero.float()
+    mat_res = torch.mm(mat_a_nonzero, mat_b_nonzero)
+    num_nonzero = mat_res.sum().item() * 2  # Regard #add = #mul
 
-    for i in range(mat_b_nonzero.shape[0]):
-        partial = torch.mul(mat_a_nonzero, mat_b_nonzero[i])
-        num_nonzero = partial.sum().item()
-        num_mul += num_nonzero
-        num_add += num_nonzero
-
-    return num_mul + num_add
+    return num_nonzero
 
 
 def count_sparsity(m):
