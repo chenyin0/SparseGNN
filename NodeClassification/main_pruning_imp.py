@@ -21,6 +21,7 @@ import utils
 import time
 import logger
 import sys
+from graph_pruning import GraphPruning
 
 warnings.filterwarnings('ignore')
 
@@ -409,6 +410,8 @@ def run_get_mask(args,
             #     .format(epoch, acc_val * 100, acc_test * 100, best_val_acc['val_acc'] * 100,
             #             best_val_acc['test_acc'] * 100, best_val_acc['epoch']))
 
+    print('Mat_time: {:.4f}'.format(net_gcn.mm_time))
+
     return best_epoch_mask, rewind_weight
 
 
@@ -464,12 +467,12 @@ if __name__ == "__main__":
     # args['dataset'] = 'actor'
     # args['dataset'] = 'squirrel'
     # args['dataset'] = 'wikics'
-    # args['dataset'] = 'pubmed'
-    args['dataset'] = 'reddit'
+    args['dataset'] = 'pubmed'
+    # args['dataset'] = 'reddit'
     # args['dataset'] = 'arxiv'
     # args['dataset'] = 'amazon_comp'
 
-    args['total_epoch'] = 200
+    args['total_epoch'] = 1
     args['gpu'] = 0
     args['n_hidden'] = 512
     args['n_layer'] = 3
@@ -519,12 +522,18 @@ if __name__ == "__main__":
     adj, features, labels, idx_train, idx_val, idx_test, n_classes, g, edge_index = utils.load_dataset(
         args['dataset'])
 
+    adj_pruned = GraphPruning.random(adj, 0.001)
+    # adj_pruned = GraphPruning.mlf_pruning(adj, 0.99)
+
     # print(utils.count_sparsity(features))
 
     for p in range(100):
 
         # final_mask_dict, rewind_weight = run_get_mask(args, seed, p, rewind_weight)
-        final_mask_dict, rewind_weight = run_get_mask(args, seed, p, adj, features, labels,
+        # final_mask_dict, rewind_weight = run_get_mask(args, seed, p, adj, features, labels,
+        #                                               idx_train, idx_val, idx_test, n_classes,
+        #                                               edge_index, rewind_weight)
+        final_mask_dict, rewind_weight = run_get_mask(args, seed, p, adj_pruned, features, labels,
                                                       idx_train, idx_val, idx_test, n_classes,
                                                       edge_index, rewind_weight)
 
@@ -548,6 +557,9 @@ if __name__ == "__main__":
         best_acc_val, final_acc_test, final_epoch_list, adj_spar, wei_spar = run_fix_mask(
             args, seed, rewind_weight, adj, features, labels, idx_train, idx_val, idx_test,
             n_classes, edge_index)
+        # best_acc_val, final_acc_test, final_epoch_list, adj_spar, wei_spar = run_fix_mask(
+        #     args, seed, rewind_weight, adj_pruned, features, labels, idx_train, idx_val, idx_test,
+        #     n_classes, edge_index)
 
         print("=" * 120)
         print(
