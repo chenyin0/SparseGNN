@@ -22,8 +22,141 @@ import time
 import logger
 import sys
 from graph_pruning import GraphPruning
+import random
 
 warnings.filterwarnings('ignore')
+
+
+def run_base(args, adj, features, labels, idx_train, idx_val, idx_test, n_classes, edge_index):
+
+    if args['gpu'] < 0:
+        cuda = False
+    else:
+        cuda = True
+        gpu_id = args['gpu']
+    device = th.device("cuda:" + str(gpu_id) if cuda else "cpu")
+
+    # adj = adj.cuda()
+    # features = features.cuda()
+    # labels = labels.cuda()
+    adj = adj.to(device)
+    features = features.to(device)
+    labels = labels.to(device)
+    edge_index = edge_index.to(device)
+    loss_func = nn.CrossEntropyLoss()
+
+    in_feats = features.shape[-1]
+    n_hidden = args['n_hidden']
+    embedding_dim = [in_feats]
+    embedding_dim += [n_hidden] * (args['n_layer'] - 2)
+    embedding_dim.append(n_classes)
+
+    # net_gcn = net.net_gcn(embedding_dim=args['embedding_dim'], adj=adj)
+    # net_gcn = net.net_gcn(embedding_dim=embedding_dim, adj=adj)
+    if args['net'] == 'gcn':
+        net_gcn = net.net_gcn(embedding_dim=embedding_dim, adj=adj)
+        pruning.add_mask(net_gcn)
+    elif args['net'] == 'graphsage':
+        net_gcn = GraphSAGE(embedding_dim=embedding_dim, adj=adj)
+        pruning_sage.add_mask(net_gcn)
+    # pruning.add_mask(net_gcn)
+    # net_gcn = net_gcn.cuda()
+    net_gcn = net_gcn.to(device)
+    # net_gcn.load_state_dict(rewind_weight_mask)
+
+    # adj_spar, wei_spar = pruning.print_sparsity(net_gcn)
+    if args['net'] == 'gcn':
+        adj_spar, wei_spar = pruning.print_sparsity(net_gcn)
+    elif args['net'] == 'graphsage':
+        adj_spar, wei_spar = pruning_sage.print_sparsity(net_gcn)
+
+    # weight = net_gcn.net_layer[0].weight_mask_fixed
+    # print(weight)
+
+    for name, param in net_gcn.named_parameters():
+        if 'mask' in name:
+            param.requires_grad = False
+
+    optimizer = torch.optim.Adam(net_gcn.parameters(),
+                                 lr=args['lr'],
+                                 weight_decay=args['weight_decay'])
+    acc_test = 0.0
+    best_val_acc = {'val_acc': 0, 'epoch': 0, 'test_acc': 0}
+
+    # Record adj, wgt and feats
+    adj_mask = net_gcn.adj_mask2_fixed
+    if args['net'] == 'gcn':
+        wgt_0 = net_gcn.net_layer[0].weight_mask_fixed.T
+        wgt_1 = net_gcn.net_layer[1].weight_mask_fixed.T
+    elif args['net'] == 'graphsage':
+        wgt_0 = net_gcn.net_layer[0].lin_l.weight_mask_fixed.T
+        wgt_1 = net_gcn.net_layer[1].lin_l.weight_mask_fixed.T
+    feats = []
+
+    print('Wgt density:', utils.count_sparsity(wgt_0), utils.count_sparsity(wgt_1))
+    print()
+
+    # with open(log_file, 'wt') as f:
+    #     print('Wgt density:', utils.count_sparsity(wgt_0), utils.count_sparsity(wgt_1), file=f)
+
+    for epoch in range(args['total_epoch']):
+
+        optimizer.zero_grad()
+        # output = net_gcn(features, adj)
+        if args['net'] == 'gcn':
+            output = net_gcn(features, adj)
+        elif args['net'] == 'graphsage':
+            output = net_gcn(features, edge_index)
+        loss = loss_func(output[idx_train], labels[idx_train])
+        loss.backward()
+        optimizer.step()
+        with torch.no_grad():
+            if args['net'] == 'gcn':
+                output = net_gcn(features, adj, val_test=True)
+                # output = net_gcn(features, adj)
+            elif args['net'] == 'graphsage':
+                output = net_gcn(features, edge_index)
+            acc_val = f1_score(labels[idx_val].cpu().numpy(),
+                               output[idx_val].cpu().numpy().argmax(axis=1),
+                               average='micro')
+            acc_test = f1_score(labels[idx_test].cpu().numpy(),
+                                output[idx_test].cpu().numpy().argmax(axis=1),
+                                average='micro')
+            # print(acc_val)
+            if acc_val > best_val_acc['val_acc']:
+                # print()
+                # print(acc_val, best_val_acc['val_acc'])
+
+                best_val_acc['val_acc'] = acc_val
+                best_val_acc['test_acc'] = acc_test
+                best_val_acc['epoch'] = epoch
+
+                feats = net_gcn.feats
+
+                # print()
+                # for i in range(len(feats)):
+                #     print(i, utils.count_sparsity(feats[i]))
+
+                # feat_total = output.numel()
+                # zeros = torch.zeros_like(output)
+                # ones = torch.ones_like(output)
+                # feat_nonzero_norm = torch.where(output != 0, ones, zeros)
+                # feat_nonzero = feat_nonzero_norm.sum().item()
+                # feat_dense = feat_nonzero * 100 / feat_total
+                # print('feat_dense: ', feat_dense)
+
+        # print(
+        #     "(Fix Mask) Epoch:[{}] Val:[{:.2f}] Test:[{:.2f}] | Final Val:[{:.2f}] Test:[{:.2f}] at Epoch:[{}]"
+        #     .format(epoch, acc_val * 100, acc_test * 100, best_val_acc['val_acc'] * 100,
+        #             best_val_acc['test_acc'] * 100, best_val_acc['epoch']))
+
+    print('Feat density:', utils.count_sparsity(feats[0]), utils.count_sparsity(feats[1]))
+    print()
+
+    time_cost = net_gcn.mm_time
+
+    return best_val_acc['val_acc'], best_val_acc['test_acc'], best_val_acc[
+        'epoch'], adj_spar, wei_spar, time_cost
 
 
 # def run_fix_mask(args, seed, rewind_weight_mask):
@@ -178,8 +311,15 @@ def run_fix_mask(args, seed, rewind_weight_mask, adj, features, labels, idx_trai
     wgt_0_wo_pruning = torch.ones_like(wgt_0)
     wgt_1_wo_pruning = torch.ones_like(wgt_1)
 
+    # wgt_0_sp = wgt_0.to_sparse()
+    # wgt_1_sp = wgt_1.to_sparse()
+
     feat_tmp = torch.mm(feats[0], wgt_0_wo_pruning)
     feat_layer_1 = torch.mm(adj, feat_tmp)
+
+    # feat_0_sp = feats[0].to_sparse()
+    # feat_layer_1_sp = feat_layer_1.to_sparse()
+    # feat_1_sp = feats[1].to_sparse()
 
     num_op_ax_w_0_wo_pruning = utils.op_count_ax_w(adj, feats[0], wgt_0_wo_pruning)
     num_op_ax_w_1_wo_pruning = utils.op_count_ax_w(adj, feat_layer_1, wgt_1_wo_pruning)
@@ -194,10 +334,12 @@ def run_fix_mask(args, seed, rewind_weight_mask, adj, features, labels, idx_trai
     # adj_pruning = torch.mul(adj, adj_mask)
     adj_pruning = adj  # No graph structure pruning
     num_op_ax_w_0 = utils.op_count_ax_w(adj_pruning, feats[0], wgt_0)
-    num_op_ax_w_1 = utils.op_count_ax_w(adj_pruning, feats[1], wgt_1) * 0.2
+    # num_op_ax_w_1 = utils.op_count_ax_w(adj_pruning, feats[1], wgt_1) * 0.2
+    num_op_ax_w_1 = utils.op_count_ax_w(adj_pruning, feats[1], wgt_1)
 
     num_op_a_xw_0 = utils.op_count_a_xw(adj_pruning, feats[0], wgt_0)
-    num_op_a_xw_1 = utils.op_count_a_xw(adj_pruning, feats[1], wgt_1) * 0.2
+    # num_op_a_xw_1 = utils.op_count_a_xw(adj_pruning, feats[1], wgt_1) * 0.2
+    num_op_a_xw_1 = utils.op_count_a_xw(adj_pruning, feats[1], wgt_1)
 
     # num_op_norm_layer_0 = round(num_op_a_xw_0 / num_op_ax_w_0, 3)
     # num_op_norm_layer_1 = round(num_op_a_xw_1 / num_op_ax_w_1, 3)
@@ -260,8 +402,10 @@ def run_fix_mask(args, seed, rewind_weight_mask, adj, features, labels, idx_trai
     # # utils.plot_val_distribution(bias_0, 'b_0')
     # # utils.plot_val_distribution(bias_1, 'b_1')
 
+    time_cost = net_gcn.mm_time
+
     return best_val_acc['val_acc'], best_val_acc['test_acc'], best_val_acc[
-        'epoch'], adj_spar, wei_spar
+        'epoch'], adj_spar, wei_spar, time_cost
 
 
 # def run_get_mask(args, seed, imp_num, rewind_weight_mask=None):
@@ -412,7 +556,9 @@ def run_get_mask(args,
 
     print('Mat_time: {:.4f}'.format(net_gcn.mm_time))
 
-    return best_epoch_mask, rewind_weight
+    time_cost = net_gcn.mm_time
+
+    return best_epoch_mask, rewind_weight, time_cost, net_gcn
 
 
 def parser_loader():
@@ -444,6 +590,7 @@ def parser_loader():
     parser.add_argument('--n-layer', type=int, default=3)
     parser.add_argument("--gpu", type=int, default=-1, help="gpu")
     parser.add_argument('--net', type=str, default='')
+    parser.add_argument('--graph-prune-ratio', type=float, default=0.5)
     return parser
 
 
@@ -453,12 +600,12 @@ if __name__ == "__main__":
 
     parser = parser_loader()
     args = vars(parser.parse_args())
-    print(args)
+    # print(args)
 
     # from dgl.data import SBMMixtureDataset
     # dataset = SBMMixtureDataset(n_graphs=1, n_nodes=8396, n_communities=60, avg_deg=5.5)
 
-    args['net'] = 'gcn'
+    # args['net'] = 'gcn'
     # args['net'] = 'graphsage'
 
     # args['dataset'] = 'cora'
@@ -467,17 +614,19 @@ if __name__ == "__main__":
     # args['dataset'] = 'actor'
     # args['dataset'] = 'squirrel'
     # args['dataset'] = 'wikics'
-    args['dataset'] = 'pubmed'
+    # args['dataset'] = 'pubmed'
     # args['dataset'] = 'reddit'
     # args['dataset'] = 'arxiv'
     # args['dataset'] = 'amazon_comp'
 
-    args['total_epoch'] = 1
+    # args['graph_prune_ratio'] = 0.8
+
+    args['total_epoch'] = 200
     args['gpu'] = 0
     args['n_hidden'] = 512
     args['n_layer'] = 3
-    args['pruning_percent_wei'] = 0.2
-    args['pruning_percent_adj'] = 0.2
+    args['pruning_percent_wei'] = 0.6
+    args['pruning_percent_adj'] = 0.6
     args['init_soft_mask_type'] = 'all_one'
 
     if args['dataset'] == 'cora':
@@ -513,29 +662,119 @@ if __name__ == "__main__":
     seed = seed_dict[args['dataset']]
     rewind_weight = None
 
+    if args['gpu'] < 0:
+        cuda = False
+    else:
+        cuda = True
+        gpu_id = args['gpu']
+    device = th.device("cuda:" + str(gpu_id) if cuda else "cpu")
+
+    ## Draft
+    # if args['gpu'] < 0:
+    #     cuda = False
+    # else:
+    #     cuda = True
+    #     gpu_id = args['gpu']
+    # device = th.device("cuda:" + str(gpu_id) if cuda else "cpu")
+
+    # for _ in range(20):
+    #     a_size = 10000
+    #     a_nonzero = 20
+    #     # b_size = 10
+    #     # b_nonzero = 2
+
+    #     a_row = random.sample(range(0, a_size), a_nonzero)
+    #     a_col = random.sample(range(0, a_size), a_nonzero)
+    #     a_val = random.sample(range(0, 10000), a_nonzero)
+
+    #     # b_row = random.sample(range(0, b_size), b_nonzero)
+    #     # b_col = random.sample(range(0, b_size), b_nonzero)
+    #     # b_val = random.sample(range(0, 10000), b_nonzero)
+
+    #     mat_a = torch.zeros(a_size, a_size)
+    #     for i in range(a_nonzero):
+    #         mat_a[a_row[i]][a_col[i]] = a_val[i]
+    #     # mat_a = mat_a.to_sparse().float().to(device)
+    #     mat_a = mat_a.to(device)
+
+    #     # mat_b = torch.zeros(b_size, b_size)
+    #     # for i in range(b_nonzero):
+    #     #     mat_b[b_row[i]][b_col[i]] = b_val[i]
+    #     # mat_b = mat_b.to_sparse().float().to(device)
+
+    #     t0 = time.time()
+    #     aa = torch.mm(mat_a, mat_a)
+    #     t_aa = time.time() - t0
+
+    #     # t0 = time.time()
+    #     # bb = torch.sparse.mm(mat_b, mat_b)
+    #     # t_bb = time.time() - t0
+
+    #     # print(t_aa * 1000, t_bb * 1000)
+
+    # print(t_aa * 1000)
+
+    ##
+
     log_name = 'acc_' + args['net'] + '_' + args['dataset'] + '_' + time.strftime(
         "%m%d_%H%M", time.localtime()) + '.txt'
     log_file = '../results/accuracy/' + log_name
     # print(log_file)
     sys.stdout = logger.Logger(log_file, sys.stdout)
+    print(args)
 
     adj, features, labels, idx_train, idx_val, idx_test, n_classes, g, edge_index = utils.load_dataset(
         args['dataset'])
 
-    adj_pruned = GraphPruning.random(adj, 0.001)
-    # adj_pruned = GraphPruning.mlf_pruning(adj, 0.99)
+    pruning_ratio = args['graph_prune_ratio']
+    # error_threshold = 0.00
+    error_threshold = 0.005
+
+    # adj_pruned = GraphPruning.random(adj, pruning_ratio)
+    # adj_pruned = GraphPruning.mlf_pruning(adj, pruning_ratio)
+    adj_pruned = GraphPruning.edge_sim_pruning(g, adj, pruning_ratio)
+    v_hasNgh = list(set(adj_pruned.indices()[0].tolist()))
+    v_hasNgh.sort()
+    nonzero_v_num = len(v_hasNgh)
+
+    # nonzero_row = adj_pruned.indices()[0]
+    # nonzero_row_uni = th.unique(nonzero_row)
 
     # print(utils.count_sparsity(features))
 
+    adj_pruned_scale = adj_pruned.to_dense().byte()[v_hasNgh]
+    adj_pruned_scale = adj_pruned_scale[:, v_hasNgh].to_sparse().float().to(device)
+
+    base_acc_val, base_acc_test, final_epoch_list, adj_spar, wei_spar, time_cost_base = run_base(
+        args, adj, features, labels, idx_train, idx_val, idx_test, n_classes, edge_index)
+
+    # print('Base acc:[{:.2f}], Base time:[{:.4f}]'.format(base_acc_test * 100, time_cost_base))
+
+    time_pruning_total = 0
     for p in range(100):
 
         # final_mask_dict, rewind_weight = run_get_mask(args, seed, p, rewind_weight)
-        # final_mask_dict, rewind_weight = run_get_mask(args, seed, p, adj, features, labels,
-        #                                               idx_train, idx_val, idx_test, n_classes,
-        #                                               edge_index, rewind_weight)
-        final_mask_dict, rewind_weight = run_get_mask(args, seed, p, adj_pruned, features, labels,
-                                                      idx_train, idx_val, idx_test, n_classes,
-                                                      edge_index, rewind_weight)
+        # final_mask_dict, rewind_weight, time_pruning = run_get_mask(
+        #     args, seed, p, adj, features, labels, idx_train, idx_val, idx_test, n_classes,
+        #     edge_index, rewind_weight)
+        final_mask_dict, rewind_weight, time_pruning, model = run_get_mask(
+            args, seed, p, adj_pruned, features, labels, idx_train, idx_val, idx_test, n_classes,
+            edge_index, rewind_weight)
+
+        time_pruning_total += time_pruning
+
+        # Dump SpMM time cost
+        feat_pruned = model.feats[1]
+        feat_pruned_scale = feat_pruned[v_hasNgh].to_sparse()
+
+        t0 = time.time()
+        aa = torch.sparse.mm(adj.to(device), feat_pruned.to_sparse())
+        t_graph_full = time.time() - t0
+
+        t0 = time.time()
+        aa = torch.sparse.mm(adj_pruned_scale, feat_pruned_scale)
+        t_graph_pruned = time.time() - t0
+        ##
 
         if args['net'] == 'gcn':
             rewind_weight['adj_mask1_train'] = final_mask_dict['adj_mask']
@@ -554,18 +793,39 @@ if __name__ == "__main__":
 
         # best_acc_val, final_acc_test, final_epoch_list, adj_spar, wei_spar = run_fix_mask(
         #     args, seed, rewind_weight)
-        best_acc_val, final_acc_test, final_epoch_list, adj_spar, wei_spar = run_fix_mask(
+        best_acc_val, final_acc_test, final_epoch_list, adj_spar, wei_spar, time_effect = run_fix_mask(
             args, seed, rewind_weight, adj, features, labels, idx_train, idx_val, idx_test,
             n_classes, edge_index)
         # best_acc_val, final_acc_test, final_epoch_list, adj_spar, wei_spar = run_fix_mask(
         #     args, seed, rewind_weight, adj_pruned, features, labels, idx_train, idx_val, idx_test,
         #     n_classes, edge_index)
 
+        # Accuracy threshold
+        if (base_acc_val - final_acc_test) > error_threshold:
+            break
+
+        # Minimal sparsity threshold
+        if args['net'] == 'gcn':
+            # wgt_0 = model.net_layer[0].weight_mask_fixed.T
+            wgt_1 = model.net_layer[1].weight_mask_fixed.T
+        elif args['net'] == 'graphsage':
+            # wgt_0 = model.net_layer[0].lin_l.weight_mask_fixed.T
+            wgt_1 = model.net_layer[1].lin_l.weight_mask_fixed.T
+
+        sparsity_wgt_1 = utils.count_sparsity(wgt_1)
+        if sparsity_wgt_1 <= 0.005:
+            break
+
         print("=" * 120)
         print(
-            "syd : Sparsity:[{}], Best Val:[{:.2f}] at epoch:[{}] | Final Test Acc:[{:.2f}] Adj:[{:.2f}%] Wei:[{:.2f}%]"
+            "syd : Sparsity:[{}], Best Val:[{:.2f}] at epoch:[{}] | Final Test Acc:[{:.2f}] Adj:[{:.2f}%] Wei:[{:.2f}%] | Acc Decline:[{:.2f}]"
             .format(p + 1, best_acc_val * 100, final_epoch_list, final_acc_test * 100, adj_spar,
-                    wei_spar))
+                    wei_spar, (base_acc_test - final_acc_test) * 100))
+        print('Base time:[{:.3f}], Pruning time:[{:.3f}], Effect time:[{:.3f}], Pruning cost:[{:.2f}]'.format(
+            time_cost_base, time_pruning_total, time_effect, (time_pruning_total + time_effect) / time_cost_base))
+        # print('Pruning cost:[{:.2f}]'.format((time_pruning_total + time_effect) / time_cost_base))
+        print('Full graph pruning time:[{:.3f}], Sparse graph pruning time:[{:.3f}], Reduction:[{:.3f}]'.format(
+            t_graph_full * 1000, t_graph_pruned * 1000, t_graph_full / t_graph_pruned))
         print("=" * 120)
 
     print('\n>> Task {:s} execution time: {}'.format(
