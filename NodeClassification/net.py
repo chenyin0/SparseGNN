@@ -3,6 +3,7 @@ import torch.nn as nn
 import pdb
 import copy
 import utils
+import time
 
 
 class net_gcn(nn.Module):
@@ -17,7 +18,8 @@ class net_gcn(nn.Module):
         ])
         self.relu = nn.ReLU(inplace=True)
         self.dropout = nn.Dropout(p=0.5)
-        self.adj_nonzero = torch.nonzero(adj, as_tuple=False).shape[0]
+        # self.adj_nonzero = torch.nonzero(adj, as_tuple=False).shape[0]
+        self.adj_nonzero = adj._nnz()
         # self.adj_mask1_train = nn.Parameter(self.generate_adj_mask(adj))
         # self.adj_mask2_fixed = nn.Parameter(self.generate_adj_mask(adj), requires_grad=False)
 
@@ -33,6 +35,7 @@ class net_gcn(nn.Module):
         self.normalize = utils.torch_normalize_adj
 
         self.feats = []  # Record features of each layer
+        self.mm_time = 0
 
     def forward(self, x, adj, val_test=False):
 
@@ -70,7 +73,17 @@ class net_gcn(nn.Module):
             x = self.net_layer[ln](x)
             # spar_x_after = utils.count_sparsity(x)
             # print('spar: ', spar_x_pre, w_spar, spar_x_after)
+
+            t0 = time.time()
             x = torch.mm(adj, x)  # (AX)W -> A(XW)
+            self.mm_time += time.time() - t0
+
+            # # adj_sp = adj.to_sparse()   
+            # x_sp = x.to_sparse()
+            # t0 = time.time()
+            # x = torch.sparse.mm(adj, x_sp)  # (AX)W -> A(XW)
+            # self.mm_time += time.time() - t0
+            # x = x.to_dense()
 
             if ln < self.layer_num - 1:
                 x = self.relu(x)

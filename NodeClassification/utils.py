@@ -9,6 +9,7 @@ import sys
 import torch
 # import metis
 import gc
+import time
 
 # import dgl
 from dgl.data import CoraGraphDataset, CiteseerGraphDataset, PubmedGraphDataset, RedditDataset, AmazonCoBuyComputerDataset, SBMMixtureDataset
@@ -145,11 +146,15 @@ def load_dataset(dataset_str):
 
     g = dataset[0]
     adj = g.adj()
-    adj = adj.to_dense()
+    # adj = adj.to_dense()
+    adj = adj.coo()
+    indices = torch.tensor([adj[0].tolist(), adj[1].tolist()])
+    values = torch.ones(adj[0].shape[0])
+    adj = torch.sparse_coo_tensor(indices=indices, values=values)
 
     features = g.ndata['feat']
     labels = g.ndata['label']
-    if dataset_str == 'amazon_comp' or dataset_str == 'chameleon' or dataset_str == 'wikics' or dataset_str == 'squirrel' or dataset_str == 'actor' or dataset_str == 'arxiv':
+    if dataset_str == 'amazon_comp' or dataset_str == 'chameleon' or dataset_str == 'wikics' or dataset_str == 'squirrel' or dataset_str == 'actor' or dataset_str == 'arxiv' or dataset_str == 'reddit':
         n_classes = dataset.num_classes
     else:
         n_classes = dataset.num_labels
@@ -226,17 +231,22 @@ def preprocess_features(features):
 def torch_normalize_adj(adj):
     # adj = adj + torch.eye(adj.shape[0]).cuda()
     device = adj.device
-    adj = adj + torch.eye(adj.shape[0]).to(device)
+    adj = adj + torch.eye(adj.shape[0]).to_sparse().to(device)
+    adj = adj.byte().to_dense()
     rowsum = adj.sum(1)
+    adj = adj.to_sparse().float()
     d_inv_sqrt = torch.pow(rowsum, -0.5).flatten()
     d_inv_sqrt[torch.isinf(d_inv_sqrt)] = 0.0
     # d_mat_inv_sqrt = torch.diag(d_inv_sqrt).cuda()
     d_mat_inv_sqrt = torch.diag(d_inv_sqrt)
     # return adj.mm(d_mat_inv_sqrt).t().mm(d_mat_inv_sqrt)
 
-    adj_sp = adj.to_sparse()
+    # adj_sp = adj.to_sparse()
+    # d_mat_inv_sqrt_sp = d_mat_inv_sqrt.to_sparse()
+    # return torch.sparse.mm(torch.sparse.mm(adj_sp, d_mat_inv_sqrt_sp).t(), d_mat_inv_sqrt_sp)
+
     d_mat_inv_sqrt_sp = d_mat_inv_sqrt.to_sparse()
-    return torch.sparse.mm(torch.sparse.mm(adj_sp, d_mat_inv_sqrt_sp).t(), d_mat_inv_sqrt_sp)
+    return torch.sparse.mm(torch.sparse.mm(adj, d_mat_inv_sqrt_sp).t(), d_mat_inv_sqrt_sp)
 
 
 def normalize_adj(adj):
@@ -394,13 +404,16 @@ def op_count_a_xw(adj, feat, weight):
 #     mat_a = mat_a.clone().detach()
 #     mat_b = mat_b.clone().detach()
 
-#     mat_a_zeros = torch.zeros_like(mat_a, dtype=torch.uint8)
-#     mat_a_ones = torch.ones_like(mat_a, dtype=torch.uint8)
-#     mat_a_nonzero = torch.where(mat_a != 0, mat_a_ones, mat_a_zeros)
+#     mat_a_sp = mat_a.to_dense().byte()
+#     mat_b_sp = mat_b.to_dense().byte()
 
-#     mat_b_zeros = torch.zeros_like(mat_b, dtype=torch.uint8)
-#     mat_b_ones = torch.ones_like(mat_b, dtype=torch.uint8)
-#     mat_b_nonzero = torch.where(mat_b != 0, mat_b_ones, mat_b_zeros)
+#     mat_a_zeros = torch.zeros_like(mat_a_sp, dtype=torch.uint8)
+#     mat_a_ones = torch.ones_like(mat_a_sp, dtype=torch.uint8)
+#     mat_a_nonzero = torch.where(mat_a_sp != 0, mat_a_ones, mat_a_zeros)
+
+#     mat_b_zeros = torch.zeros_like(mat_b_sp, dtype=torch.uint8)
+#     mat_b_ones = torch.ones_like(mat_b_sp, dtype=torch.uint8)
+#     mat_b_nonzero = torch.where(mat_b_sp != 0, mat_b_ones, mat_b_zeros)
 
 #     mat_b_nonzero = mat_b_nonzero.t()
 
@@ -420,6 +433,9 @@ def op_count(mat_a, mat_b):
     mat_a = mat_a.clone().detach()
     mat_b = mat_b.clone().detach()
 
+    mat_a = mat_a.to_dense()
+    mat_b = mat_b.to_dense()
+
     mat_a_zeros = torch.zeros_like(mat_a, dtype=torch.uint8)
     mat_a_ones = torch.ones_like(mat_a, dtype=torch.uint8)
     mat_a_nonzero = torch.where(mat_a != 0, mat_a_ones, mat_a_zeros)
@@ -434,9 +450,9 @@ def op_count(mat_a, mat_b):
     mat_a_nonzero = mat_a_nonzero.float()
     mat_b_nonzero = mat_b_nonzero.float()
     mat_res = torch.mm(mat_a_nonzero, mat_b_nonzero)
-    num_nonzero = mat_res.sum().item() * 2  # Regard #add = #mul
+    op_num = mat_res.sum().item() * 2  # Regard #add = #mul
 
-    return num_nonzero
+    return op_num
 
 
 def count_sparsity(m):
@@ -495,3 +511,11 @@ def plot_val_distribution(data, file_name):
     plt.hist(data, bins=100)
     plt.savefig('./figures/' + file_name + '.jpg')
     plt.close()
+
+
+def time_count(a, b):
+    t0 = time.time()
+    x = torch.sparse.mm(a, b)
+    t = time.time() - t0
+    
+    return t
