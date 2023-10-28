@@ -6,6 +6,7 @@ import torch.nn.functional as F
 # from tqdm import tqdm
 # from NodeClassification import utils
 import utils
+import time
 
 class GraphSAGE(nn.Module):
 
@@ -27,12 +28,24 @@ class GraphSAGE(nn.Module):
 
         self.dropout = 0.5
 
-        self.adj_nonzero = torch.nonzero(adj, as_tuple=False).shape[0]
-        self.adj_mask1_train = nn.Parameter(self.generate_adj_mask(adj))
-        self.adj_mask2_fixed = nn.Parameter(self.generate_adj_mask(adj), requires_grad=False)
+        # self.adj_nonzero = torch.nonzero(adj, as_tuple=False).shape[0]
+        self.adj_nonzero = adj._nnz()
+        # self.adj_mask1_train = nn.Parameter(self.generate_adj_mask(adj))
+        # self.adj_mask2_fixed = nn.Parameter(self.generate_adj_mask(adj), requires_grad=False)
+
+        ################
+        # Debug_yin_feat Replace adj_mask to feature mask
+        vertex_num = adj.shape[0]
+        # Only set mask for the 2nd-layer's features
+        self.adj_mask1_train = nn.Parameter(self.generate_feat_mask(vertex_num, embedding_dim[1]))
+        self.adj_mask2_fixed = nn.Parameter(self.generate_feat_mask(vertex_num, embedding_dim[1]),
+                                            requires_grad=False)
+        ################
+
         self.normalize = utils.torch_normalize_adj
 
         self.feats = []  # Record features of each layer
+        self.mm_time = 0
 
     # def reset_parameters(self):
     #     for layer in self.net_layer:
@@ -45,7 +58,11 @@ class GraphSAGE(nn.Module):
         self.feats.append(h)
 
         for i, layer in enumerate(self.net_layer[:-1]):
+
+            t0 = time.time()
             h = layer(h, edge_index)
+            self.mm_time += time.time() - t0
+
             h = F.relu(h)
             h = F.dropout(h, p=self.dropout, training=self.training)
             self.feats.append(h)
@@ -59,4 +76,8 @@ class GraphSAGE(nn.Module):
         zeros = torch.zeros_like(sparse_adj)
         ones = torch.ones_like(sparse_adj)
         mask = torch.where(sparse_adj != 0, ones, zeros)
+        return mask
+    
+    def generate_feat_mask(self, vertex_num, embedding_dim):
+        mask = torch.ones([vertex_num, embedding_dim])
         return mask
