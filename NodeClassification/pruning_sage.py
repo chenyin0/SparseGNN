@@ -104,9 +104,8 @@ def add_mask(model, init_mask_dict=None):
         mask1_train = nn.Parameter(torch.ones_like(model.net_layer[0].lin_l.weight))
         mask1_fixed = nn.Parameter(torch.ones_like(model.net_layer[0].lin_l.weight),
                                    requires_grad=False)
-        mask2_train = nn.Parameter(torch.ones_like(model.net_layer[1].lin_l.weight))
-        mask2_fixed = nn.Parameter(torch.ones_like(model.net_layer[1].lin_l.weight),
-                                   requires_grad=False)
+        mask2_train = nn.Parameter(torch.ones_like(model.net_layer[1].weight))
+        mask2_fixed = nn.Parameter(torch.ones_like(model.net_layer[1].weight), requires_grad=False)
 
     else:
         mask1_train = nn.Parameter(init_mask_dict['mask1_train'])
@@ -115,25 +114,25 @@ def add_mask(model, init_mask_dict=None):
         mask2_fixed = nn.Parameter(init_mask_dict['mask2_fixed'], requires_grad=False)
 
     AddTrainableMask.apply(model.net_layer[0].lin_l, 'weight', mask1_train, mask1_fixed)
-    AddTrainableMask.apply(model.net_layer[1].lin_l, 'weight', mask2_train, mask2_fixed)
+    AddTrainableMask.apply(model.net_layer[1], 'weight', mask2_train, mask2_fixed)
 
 
 def generate_mask(model):
 
     mask_dict = {}
     mask_dict['mask1'] = torch.zeros_like(model.net_layer[0].lin_l.weight)
-    mask_dict['mask2'] = torch.zeros_like(model.net_layer[1].lin_l.weight)
+    mask_dict['mask2'] = torch.zeros_like(model.net_layer[1].weight)
 
     return mask_dict
 
 
 def subgradient_update_mask(model, args):
 
-    # model.adj_mask1_train.grad.data.add_(args['s1'] * torch.sign(model.adj_mask1_train.data))
+    model.adj_mask1_train.grad.data.add_(args['s1'] * torch.sign(model.adj_mask1_train.data))
     model.net_layer[0].lin_l.weight_mask_train.grad.data.add_(
         args['s2'] * torch.sign(model.net_layer[0].lin_l.weight_mask_train.data))
-    model.net_layer[1].lin_l.weight_mask_train.grad.data.add_(
-        args['s2'] * torch.sign(model.net_layer[1].lin_l.weight_mask_train.data))
+    model.net_layer[1].weight_mask_train.grad.data.add_(
+        args['s2'] * torch.sign(model.net_layer[1].weight_mask_train.data))
 
 
 def get_mask_distribution(model, if_numpy=True):
@@ -146,7 +145,7 @@ def get_mask_distribution(model, if_numpy=True):
     nonzero = torch.abs(weight_mask_tensor0) > 0
     weight_mask_tensor0 = weight_mask_tensor0[nonzero]
 
-    weight_mask_tensor1 = model.net_layer[1].lin_l.weight_mask_train.flatten()  # 22928
+    weight_mask_tensor1 = model.net_layer[1].weight_mask_train.flatten()  # 22928
     nonzero = torch.abs(weight_mask_tensor1) > 0
     weight_mask_tensor1 = weight_mask_tensor1[nonzero]
 
@@ -218,8 +217,8 @@ def get_final_mask_epoch(model, adj_percent, wei_percent):
     mask_dict['adj_mask'] = get_each_mask(ori_adj_mask, adj_thre)
     mask_dict['weight1_mask'] = get_each_mask(
         model.net_layer[0].lin_l.state_dict()['weight_mask_train'], wei_thre)
-    mask_dict['weight2_mask'] = get_each_mask(
-        model.net_layer[1].lin_l.state_dict()['weight_mask_train'], wei_thre)
+    mask_dict['weight2_mask'] = get_each_mask(model.net_layer[1].state_dict()['weight_mask_train'],
+                                              wei_thre)
 
     return mask_dict
 
@@ -228,7 +227,7 @@ def get_final_mask_epoch(model, adj_percent, wei_percent):
 def get_final_weight_mask_epoch(model, wei_percent):
 
     weight1 = model.net_layer[0].lin_l.weight_orig_weight.detach().cpu().flatten()
-    weight2 = model.net_layer[1].lin_l.weight_orig_weight.detach().cpu().flatten()
+    weight2 = model.net_layer[1].weight_orig_weight.detach().cpu().flatten()
 
     weight_mask_tensor = torch.cat([weight1, weight2])
 
@@ -241,8 +240,8 @@ def get_final_weight_mask_epoch(model, wei_percent):
     mask_dict = {}
     mask_dict['weight1_mask'] = get_each_mask(
         model.net_layer[0].lin_l.state_dict()['weight_orig_weight'], wei_thre)
-    mask_dict['weight2_mask'] = get_each_mask(
-        model.net_layer[1].lin_l.state_dict()['weight_orig_weight'], wei_thre)
+    mask_dict['weight2_mask'] = get_each_mask(model.net_layer[1].state_dict()['weight_orig_weight'],
+                                              wei_thre)
 
     return mask_dict
 
@@ -252,7 +251,7 @@ def oneshot_weight_magnitude_pruning(model, wei_percent):
 
     pdb.set_trace()
     model.net_layer[0].lin_l.weight_mask_train.requires_grad = False
-    model.net_layer[1].lin_l.weight_mask_train.requires_grad = False
+    model.net_layer[1].weight_mask_train.requires_grad = False
 
     adj_mask, wei_mask = get_mask_distribution(model, if_numpy=False)
     wei_total = wei_mask.shape[0]
@@ -262,8 +261,7 @@ def oneshot_weight_magnitude_pruning(model, wei_percent):
 
     weight1_mask = get_each_mask(model.net_layer[0].lin_l.state_dict()['weight_mask_train'],
                                  wei_thre)
-    weight2_mask = get_each_mask(model.net_layer[1].lin_l.state_dict()['weight_mask_train'],
-                                 wei_thre)
+    weight2_mask = get_each_mask(model.net_layer[1].state_dict()['weight_mask_train'], wei_thre)
 
     return mask_dict
 
@@ -273,11 +271,11 @@ def random_pruning(model, adj_percent, wei_percent):
 
     model.adj_mask1_train.requires_grad = False
     model.net_layer[0].lin_l.weight_mask_train.requires_grad = False
-    model.net_layer[1].lin_l.weight_mask_train.requires_grad = False
+    model.net_layer[1].weight_mask_train.requires_grad = False
 
     adj_nonzero = model.adj_mask1_train.nonzero()
     wei1_nonzero = model.net_layer[0].lin_l.weight_mask_train.nonzero()
-    wei2_nonzero = model.net_layer[1].lin_l.weight_mask_train.nonzero()
+    wei2_nonzero = model.net_layer[1].weight_mask_train.nonzero()
 
     adj_total = adj_nonzero.shape[0]
     wei1_total = wei1_nonzero.shape[0]
@@ -304,12 +302,12 @@ def random_pruning(model, adj_percent, wei_percent):
         model.net_layer[0].lin_l.weight_mask_fixed[i][j] = 0
 
     for i, j in wei2_pruned:
-        model.net_layer[1].lin_l.weight_mask_train[i][j] = 0
-        model.net_layer[1].lin_l.weight_mask_fixed[i][j] = 0
+        model.net_layer[1].weight_mask_train[i][j] = 0
+        model.net_layer[1].weight_mask_fixed[i][j] = 0
 
     model.adj_mask1_train.requires_grad = True
     model.net_layer[0].lin_l.weight_mask_train.requires_grad = True
-    model.net_layer[1].lin_l.weight_mask_train.requires_grad = True
+    model.net_layer[1].weight_mask_train.requires_grad = True
 
 
 def print_sparsity(model):
@@ -319,11 +317,11 @@ def print_sparsity(model):
     adj_spar = adj_mask_nonzero * 100 / adj_nonzero
 
     weight1_total = model.net_layer[0].lin_l.weight_mask_fixed.numel()
-    weight2_total = model.net_layer[1].lin_l.weight_mask_fixed.numel()
+    weight2_total = model.net_layer[1].weight_mask_fixed.numel()
     weight_total = weight1_total + weight2_total
 
     weight1_nonzero = model.net_layer[0].lin_l.weight_mask_fixed.sum().item()
-    weight2_nonzero = model.net_layer[1].lin_l.weight_mask_fixed.sum().item()
+    weight2_nonzero = model.net_layer[1].weight_mask_fixed.sum().item()
     weight_nonzero = weight1_nonzero + weight2_nonzero
 
     wei_spar = weight_nonzero * 100 / weight_total
@@ -337,11 +335,11 @@ def print_sparsity(model):
 def print_weight_sparsity(model):
 
     weight1_total = model.net_layer[0].lin_l.weight_mask_fixed.numel()
-    weight2_total = model.net_layer[1].lin_l.weight_mask_fixed.numel()
+    weight2_total = model.net_layer[1].weight_mask_fixed.numel()
     weight_total = weight1_total + weight2_total
 
     weight1_nonzero = model.net_layer[0].lin_l.weight_mask_fixed.sum().item()
-    weight2_nonzero = model.net_layer[1].lin_l.weight_mask_fixed.sum().item()
+    weight2_nonzero = model.net_layer[1].weight_mask_fixed.sum().item()
     weight_nonzero = weight1_nonzero + weight2_nonzero
 
     wei_spar = weight_nonzero * 100 / weight_total
@@ -364,7 +362,7 @@ def add_trainable_mask_noise(model, c):
 
     model.adj_mask1_train.requires_grad = False
     model.net_layer[0].lin_l.weight_mask_train.requires_grad = False
-    model.net_layer[1].lin_l.weight_mask_train.requires_grad = False
+    model.net_layer[1].weight_mask_train.requires_grad = False
 
     rand1 = (2 * torch.rand(model.adj_mask1_train.shape) - 1) * c
     rand1 = rand1.to(model.adj_mask1_train.device)
@@ -376,14 +374,14 @@ def add_trainable_mask_noise(model, c):
     rand2 = rand2 * model.net_layer[0].lin_l.weight_mask_train
     model.net_layer[0].lin_l.weight_mask_train.add_(rand2)
 
-    rand3 = (2 * torch.rand(model.net_layer[1].lin_l.weight_mask_train.shape) - 1) * c
-    rand3 = rand3.to(model.net_layer[1].lin_l.weight_mask_train.device)
-    rand3 = rand3 * model.net_layer[1].lin_l.weight_mask_train
-    model.net_layer[1].lin_l.weight_mask_train.add_(rand3)
+    rand3 = (2 * torch.rand(model.net_layer[1].weight_mask_train.shape) - 1) * c
+    rand3 = rand3.to(model.net_layer[1].weight_mask_train.device)
+    rand3 = rand3 * model.net_layer[1].weight_mask_train
+    model.net_layer[1].weight_mask_train.add_(rand3)
 
     model.adj_mask1_train.requires_grad = True
     model.net_layer[0].lin_l.weight_mask_train.requires_grad = True
-    model.net_layer[1].lin_l.weight_mask_train.requires_grad = True
+    model.net_layer[1].weight_mask_train.requires_grad = True
 
 
 def soft_mask_init(model, init_type, seed):
@@ -404,11 +402,11 @@ def soft_mask_init(model, init_type, seed):
         model.net_layer[0].lin_l.weight_mask_train.mul_(model.net_layer[0].lin_l.weight_mask_fixed)
         model.net_layer[0].lin_l.weight_mask_train.requires_grad = True
 
-        init.kaiming_uniform_(model.net_layer[1].lin_l.weight_mask_train, a=math.sqrt(5))
+        init.kaiming_uniform_(model.net_layer[1].weight_mask_train, a=math.sqrt(5))
 
-        model.net_layer[1].lin_l.weight_mask_train.requires_grad = False
-        model.net_layer[1].lin_l.weight_mask_train.mul_(model.net_layer[1].lin_l.weight_mask_fixed)
-        model.net_layer[1].lin_l.weight_mask_train.requires_grad = True
+        model.net_layer[1].weight_mask_train.requires_grad = False
+        model.net_layer[1].weight_mask_train.mul_(model.net_layer[1].weight_mask_fixed)
+        model.net_layer[1].weight_mask_train.requires_grad = True
 
     elif init_type == 'normal':
         mean = 1.0
@@ -423,11 +421,11 @@ def soft_mask_init(model, init_type, seed):
         model.net_layer[0].lin_l.weight_mask_train.mul_(model.net_layer[0].lin_l.weight_mask_fixed)
         model.net_layer[0].lin_l.weight_mask_train.requires_grad = True
 
-        init.normal_(model.net_layer[1].lin_l.weight_mask_train, mean=mean, std=std)
+        init.normal_(model.net_layer[1].weight_mask_train, mean=mean, std=std)
 
-        model.net_layer[1].lin_l.weight_mask_train.requires_grad = False
-        model.net_layer[1].lin_l.weight_mask_train.mul_(model.net_layer[1].lin_l.weight_mask_fixed)
-        model.net_layer[1].lin_l.weight_mask_train.requires_grad = True
+        model.net_layer[1].weight_mask_train.requires_grad = False
+        model.net_layer[1].weight_mask_train.mul_(model.net_layer[1].weight_mask_fixed)
+        model.net_layer[1].weight_mask_train.requires_grad = True
 
     elif init_type == 'uniform':
         a = 0.8
@@ -442,11 +440,11 @@ def soft_mask_init(model, init_type, seed):
         model.net_layer[0].lin_l.weight_mask_train.mul_(model.net_layer[0].lin_l.weight_mask_fixed)
         model.net_layer[0].lin_l.weight_mask_train.requires_grad = True
 
-        init.uniform_(model.net_layer[1].lin_l.weight_mask_train, a=a, b=b)
+        init.uniform_(model.net_layer[1].weight_mask_train, a=a, b=b)
 
-        model.net_layer[1].lin_l.weight_mask_train.requires_grad = False
-        model.net_layer[1].lin_l.weight_mask_train.mul_(model.net_layer[1].lin_l.weight_mask_fixed)
-        model.net_layer[1].lin_l.weight_mask_train.requires_grad = True
+        model.net_layer[1].weight_mask_train.requires_grad = False
+        model.net_layer[1].weight_mask_train.mul_(model.net_layer[1].weight_mask_fixed)
+        model.net_layer[1].weight_mask_train.requires_grad = True
 
     else:
         assert False

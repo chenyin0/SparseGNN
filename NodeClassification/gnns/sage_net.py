@@ -19,12 +19,14 @@ class GraphSAGE(nn.Module):
 
         self.net_layer = nn.ModuleList()
         if n_layers > 1:
-            self.net_layer.append(SAGEConv(in_feats, n_hidden, aggr=aggr))
+            self.net_layer.append(SAGEConv(in_feats, n_hidden, aggr=aggr, bias=False))
             for i in range(1, n_layers - 1):
-                self.net_layer.append(SAGEConv(n_hidden, n_hidden, aggr=aggr))
-            self.net_layer.append(SAGEConv(n_hidden, n_classes, aggr=aggr))
+                self.net_layer.append(SAGEConv(n_hidden, n_hidden, aggr=aggr, bias=False))
+            # self.net_layer.append(SAGEConv(n_hidden, n_classes, aggr=aggr))
+            self.net_layer.append(nn.Linear(n_hidden, n_classes, bias=False))
         else:
-            self.net_layer.append(SAGEConv(in_feats, n_classes, aggr=aggr))
+            # self.net_layer.append(SAGEConv(in_feats, n_classes, aggr=aggr))
+            self.net_layer.append(nn.Linear(in_feats, n_classes, bias=False))
 
         self.dropout = 0.5
 
@@ -60,16 +62,34 @@ class GraphSAGE(nn.Module):
         for i, layer in enumerate(self.net_layer[:-1]):
 
             t0 = time.time()
+            # h = torch.mul(h, self.adj_mask1_train)
+            # h = torch.mul(h, self.adj_mask2_fixed)
             h = layer(h, edge_index)
             self.mm_time += time.time() - t0
 
             h = F.relu(h)
             h = F.dropout(h, p=self.dropout, training=self.training)
             self.feats.append(h)
-        h = self.net_layer[-1](h, edge_index)
+        
+        # h = self.net_layer[-1](h, edge_index)
+        # self.feats.append(h)
+        # return h
+
+        ##########
+        # Only add mask on features of the 2nd layer
+        h = torch.mul(h, self.adj_mask1_train)
+        h = torch.mul(h, self.adj_mask2_fixed)
+        ##########
+
+        h = self.net_layer[-1](h)
+        values = torch.ones(edge_index[0].shape[0]).to(edge_index.device)
+        adj = torch.sparse_coo_tensor(indices=edge_index, values=values)
+        h = torch.mm(adj, h)
         self.feats.append(h)
+
         return h
     
+        
     def generate_adj_mask(self, input_adj):
 
         sparse_adj = input_adj
