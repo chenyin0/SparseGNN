@@ -148,9 +148,13 @@ def load_dataset(dataset_str):
     adj = g.adj()
     # adj = adj.to_dense()
     adj = adj.coo()
+    v_num = g.number_of_nodes()
     indices = torch.tensor([adj[0].tolist(), adj[1].tolist()])
     values = torch.ones(adj[0].shape[0])
-    adj = torch.sparse_coo_tensor(indices=indices, values=values)
+    a1 = adj[0]
+    a2 = adj[1].tolist()
+    print(max(a1), max(a2))
+    adj = torch.sparse_coo_tensor(indices=indices, values=values, size=[v_num, v_num])
 
     features = g.ndata['feat']
     labels = g.ndata['label']
@@ -231,8 +235,16 @@ def preprocess_features(features):
 def torch_normalize_adj(adj):
     # adj = adj + torch.eye(adj.shape[0]).cuda()
     device = adj.device
-    adj = adj + torch.eye(adj.shape[0]).to_sparse().to(device)
-    adj = adj.byte().to_dense()
+    adj = adj.type(torch.int8).cpu()
+    # adj = adj + torch.eye(adj.shape[0]).to_sparse().to(device)
+
+    ind = [i for i in range(adj.size()[0])]
+    indices = torch.tensor([ind, ind])
+    values = torch.ones(adj.size()[0])
+    diag = torch.sparse_coo_tensor(indices=indices, values=values, dtype=torch.int8)
+    adj = adj + diag
+
+    adj = adj.to_dense()
     rowsum = adj.sum(1)
     adj = adj.to_sparse().float()
     d_inv_sqrt = torch.pow(rowsum, -0.5).flatten()
@@ -246,7 +258,9 @@ def torch_normalize_adj(adj):
     # return torch.sparse.mm(torch.sparse.mm(adj_sp, d_mat_inv_sqrt_sp).t(), d_mat_inv_sqrt_sp)
 
     d_mat_inv_sqrt_sp = d_mat_inv_sqrt.to_sparse()
-    return torch.sparse.mm(torch.sparse.mm(adj, d_mat_inv_sqrt_sp).t(), d_mat_inv_sqrt_sp)
+    res = torch.sparse.mm(torch.sparse.mm(adj, d_mat_inv_sqrt_sp).t(), d_mat_inv_sqrt_sp).to(device)
+
+    return res
 
 
 def normalize_adj(adj):
@@ -517,5 +531,5 @@ def time_count(a, b):
     t0 = time.time()
     x = torch.sparse.mm(a, b)
     t = time.time() - t0
-    
+
     return t
