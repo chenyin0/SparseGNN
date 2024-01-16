@@ -28,6 +28,124 @@ import sys
 import utils
 
 
+def run_base(args, g, adj, features, labels, idx_train, idx_val, idx_test, n_classes):
+
+    if args['gpu'] < 0:
+        cuda = False
+    else:
+        cuda = True
+        gpu_id = args['gpu']
+    device = th.device("cuda:" + str(gpu_id) if cuda else "cpu")
+
+    pruning.setup_seed(args['seed'])
+    # adj, features, labels, idx_train, idx_val, idx_test = load_data(args['dataset'])
+    # adj = load_adj_raw(args['dataset'])
+
+    node_num = features.size()[0]
+    # class_num = labels.numpy().max() + 1
+    class_num = n_classes
+
+    # g = dgl.DGLGraph()
+    # g.add_nodes(node_num)
+    # adj = adj.tocoo()
+    # g.add_edges(adj.row, adj.col)
+    # features = features.cuda()
+    # labels = labels.cuda()
+    g = g.to(device)
+    adj = adj.to(device)
+    features = features.to(device)
+    labels = labels.to(device)
+    loss_func = nn.CrossEntropyLoss()
+
+    in_feats = features.shape[-1]
+    n_hidden = args['n_hidden']
+    embedding_dim = [in_feats]
+    embedding_dim += [n_hidden] * (args['n_layer'] - 2)
+    embedding_dim.append(n_classes)
+
+    if args['net'] == 'gin':
+        # net_gcn = GINNet(args['embedding_dim'], g)
+        net_gcn = GINNet(embedding_dim, g)
+        pruning_gin.add_mask(net_gcn)
+    elif args['net'] == 'gat':
+        # net_gcn = GATNet(args['embedding_dim'], g)
+        net_gcn = GATNet(embedding_dim, g)
+        g.add_edges(list(range(node_num)), list(range(node_num)))
+        pruning_gat.add_mask(net_gcn)
+    else:
+        assert False
+
+    # net_gcn = net_gcn.cuda()
+    net_gcn = net_gcn.to(device)
+    # net_gcn.load_state_dict(rewind_weight_mask)
+
+    if args['net'] == 'gin':
+        adj_spar, wei_spar = pruning_gin.print_sparsity(net_gcn)
+    else:
+        adj_spar, wei_spar = pruning_gat.print_sparsity(net_gcn)
+
+    for name, param in net_gcn.named_parameters():
+        if 'mask' in name:
+            param.requires_grad = False
+
+    optimizer = torch.optim.Adam(net_gcn.parameters(),
+                                 lr=args['lr'],
+                                 weight_decay=args['weight_decay'])
+    best_val_acc = {'val_acc': 0, 'epoch': 0, 'test_acc': 0}
+
+    # Record adj, wgt and feats
+    adj_mask = net_gcn.adj_mask2_fixed
+    if args['net'] == 'gin':
+        wgt_0 = net_gcn.ginlayers[0].apply_func.mlp.linear.weight_mask_fixed.T
+        wgt_1 = net_gcn.ginlayers[1].apply_func.mlp.linear.weight_mask_fixed.T
+    elif args['net'] == 'gat':
+        pass
+    feats = []
+
+    print('Wgt density:', utils.count_sparsity(wgt_0), utils.count_sparsity(wgt_1))
+    print()
+
+    for epoch in range(args['fix_epoch']):
+
+        optimizer.zero_grad()
+        output = net_gcn(g, features, 0, 0)
+        loss = loss_func(output[idx_train], labels[idx_train])
+        loss.backward()
+        optimizer.step()
+        with torch.no_grad():
+            net_gcn.eval()
+            output = net_gcn(g, features, 0, 0)
+            acc_val = f1_score(labels[idx_val].cpu().numpy(),
+                               output[idx_val].cpu().numpy().argmax(axis=1),
+                               average='micro')
+            acc_test = f1_score(labels[idx_test].cpu().numpy(),
+                                output[idx_test].cpu().numpy().argmax(axis=1),
+                                average='micro')
+            if acc_val > best_val_acc['val_acc']:
+                best_val_acc['val_acc'] = acc_val
+                best_val_acc['test_acc'] = acc_test
+                best_val_acc['epoch'] = epoch
+
+                feats = net_gcn.feats
+
+        # print(
+        #     "IMP[{}] (Fix Mask) Epoch:[{}] LOSS:[{:.4f}] Val:[{:.2f}] Test:[{:.2f}] | Final Val:[{:.2f}] Test:[{:.2f}] at Epoch:[{}]"
+        #     .format(imp_num, epoch, args['fix_epoch'], loss, acc_val * 100, acc_test * 100,
+        #             best_val_acc['val_acc'] * 100, best_val_acc['test_acc'] * 100,
+        #             best_val_acc['epoch']))
+
+    # print(
+    #     "syd final: [{},{}] IMP[{}] (Fix Mask) Final Val:[{:.2f}] Test:[{:.2f}] at Epoch:[{}] | Adj:[{:.2f}%] Wei:[{:.2f}%]"
+    #     .format(args['dataset'], args['net'], imp_num, best_val_acc['val_acc'] * 100,
+    #             best_val_acc['test_acc'] * 100, best_val_acc['epoch'], adj_spar, wei_spar))
+
+    print('Feat density:', utils.count_sparsity(feats[0]), utils.count_sparsity(feats[1]))
+    print()
+
+    return best_val_acc['val_acc'], best_val_acc['test_acc'], best_val_acc[
+        'epoch'], adj_spar, wei_spar
+
+
 # def run_fix_mask(args, imp_num, rewind_weight_mask):
 def run_fix_mask(args, imp_num, rewind_weight_mask, g, adj, features, labels, idx_train, idx_val,
                  idx_test, n_classes):

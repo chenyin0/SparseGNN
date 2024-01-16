@@ -167,9 +167,6 @@ def run_base(args, adj, features, labels, idx_train, idx_val, idx_test, n_classe
 
     time_cost = net_gcn.mm_time
 
-    feats = net_gcn.feats
-    print('Feat density:', utils.count_sparsity(feats[0]), utils.count_sparsity(feats[1]))
-
     return best_val_acc['val_acc'], best_val_acc['test_acc'], best_val_acc[
         'epoch'], adj_spar, wei_spar, time_cost
 
@@ -497,11 +494,11 @@ def run_get_mask(args,
                 pruning.soft_mask_init(net_gcn, args['init_soft_mask_type'], seed)
             elif args['net'] == 'graphsage':
                 pruning_sage.soft_mask_init(net_gcn, args['init_soft_mask_type'], seed)
-        # adj_spar, wei_spar = pruning.print_sparsity(net_gcn)
-        if args['net'] == 'gcn':
-            adj_spar, wei_spar = pruning.print_sparsity(net_gcn)
-        elif args['net'] == 'graphsage':
-            adj_spar, wei_spar = pruning_sage.print_sparsity(net_gcn)
+        # # adj_spar, wei_spar = pruning.print_sparsity(net_gcn)
+        # if args['net'] == 'gcn':
+        #     adj_spar, wei_spar = pruning.print_sparsity(net_gcn)
+        # elif args['net'] == 'graphsage':
+        #     adj_spar, wei_spar = pruning_sage.print_sparsity(net_gcn)
     else:
         # pruning.soft_mask_init(net_gcn, args['init_soft_mask_type'], seed)
         if args['net'] == 'gcn':
@@ -569,7 +566,7 @@ def run_get_mask(args,
             #     .format(epoch, acc_val * 100, acc_test * 100, best_val_acc['val_acc'] * 100,
             #             best_val_acc['test_acc'] * 100, best_val_acc['epoch']))
 
-    print('Mat_time: {:.4f}'.format(net_gcn.mm_time))
+    # print('Mat_time: {:.4f}'.format(net_gcn.mm_time))
 
     time_cost = net_gcn.mm_time
 
@@ -634,7 +631,7 @@ if __name__ == "__main__":
     # args['dataset'] = 'arxiv'
     # args['dataset'] = 'amazon_comp'
 
-    args['graph_prune_ratio'] = 0.6
+    args['graph_prune_ratio'] = 0.8
 
     args['total_epoch'] = 200
     args['gpu'] = 0
@@ -649,9 +646,9 @@ if __name__ == "__main__":
         args['pruning_percent_adj'] = 0.9
     elif args['net'] == 'graphsage':
         args['pruning_percent_wei'] = 0.5
-        args['pruning_percent_adj'] = 0.02
+        args['pruning_percent_adj'] = 0.3
 
-    args['pruning_percent_wei'] = 0.2
+    # args['pruning_percent_wei'] = 0.1
 
     if args['dataset'] == 'cora':
         args['lr'] = 0.008
@@ -790,8 +787,9 @@ if __name__ == "__main__":
                     (time_pruning_total + time_effect) / time_cost_base))
         # print('Pruning cost:[{:.2f}]'.format((time_pruning_total + time_effect) / time_cost_base))
         print(
-            'Full graph pruning time:[{:.3f}], Sparse graph pruning time:[{:.3f}], Reduction:[{:.3f}]'
-            .format(t_graph_full * 1000, t_graph_pruned * 1000, t_graph_full / t_graph_pruned))
+            'Full graph pruning time:[{:.3f}], Subgraph pruning time:[{:.3f}], Reduction:[{:.3f}], Subgraph size:[{:.1f}%]'
+            .format(t_graph_full * 1000, t_graph_pruned * 1000, t_graph_full / t_graph_pruned,
+                    adj_pruned._nnz() / adj._nnz() * 100))
         print("=" * 120)
 
         # Accuracy threshold

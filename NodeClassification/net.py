@@ -5,7 +5,6 @@ import copy
 import utils
 import time
 
-
 class net_gcn(nn.Module):
 
     def __init__(self, embedding_dim, adj):
