@@ -78,7 +78,7 @@ def run_base(args, adj, features, labels, idx_train, idx_val, idx_test, n_classe
 
     # adj_spar, wei_spar = pruning.print_sparsity(net_gcn)
     if args['net'] == 'gcn':
-        adj_spar, wei_spar = pruning.print_sparsity(net_gcn)
+        adj_spar, wei_spar, feat_spar = pruning.print_sparsity(net_gcn)
         # gpu_tracker.track()
     elif args['net'] == 'graphsage':
         adj_spar, wei_spar = pruning_sage.print_sparsity(net_gcn)
@@ -226,9 +226,9 @@ def run_fix_mask(args, seed, rewind_weight_mask, adj, features, labels, idx_trai
 
     # adj_spar, wei_spar = pruning.print_sparsity(net_gcn)
     if args['net'] == 'gcn':
-        adj_spar, wei_spar = pruning.print_sparsity(net_gcn)
+        adj_spar, wei_spar, feat_spar = pruning.print_sparsity(net_gcn)
     elif args['net'] == 'graphsage':
-        adj_spar, wei_spar = pruning_sage.print_sparsity(net_gcn)
+        adj_spar, wei_spar, feat_spar = pruning_sage.print_sparsity(net_gcn)
 
     # weight = net_gcn.net_layer[0].weight_mask_fixed
     # print(weight)
@@ -554,12 +554,14 @@ def run_get_mask(args,
                     best_epoch_mask = pruning.get_final_mask_epoch(
                         net_gcn,
                         adj_percent=args['pruning_percent_adj'],
-                        wei_percent=args['pruning_percent_wei'])
+                        wei_percent=args['pruning_percent_wei'],
+                        feat_percent=args['pruning_percent_feat'])
                 elif args['net'] == 'graphsage':
                     best_epoch_mask = pruning_sage.get_final_mask_epoch(
                         net_gcn,
                         adj_percent=args['pruning_percent_adj'],
-                        wei_percent=args['pruning_percent_wei'])
+                        wei_percent=args['pruning_percent_wei'],
+                        feat_percent=args['pruning_percent_feat'])
 
             # print(
             #     "(Get Mask) Epoch:[{}] Val:[{:.2f}] Test:[{:.2f}] | Best Val:[{:.2f}] Test:[{:.2f}] at Epoch:[{}]"
@@ -579,14 +581,19 @@ def parser_loader():
     parser.add_argument('--s1',
                         type=float,
                         default=0.0001,
-                        help='scale sparse rate (default: 0.0001)')
+                        help='[adj] scale sparse rate (default: 0.0001)')
     parser.add_argument('--s2',
                         type=float,
                         default=0.0001,
-                        help='scale sparse rate (default: 0.0001)')
+                        help='[weight] scale sparse rate (default: 0.0001)')
+    parser.add_argument('--s3',
+                        type=float,
+                        default=0.0001,
+                        help='[feature] scale sparse rate (default: 0.0001)')
     parser.add_argument('--total_epoch', type=int, default=300)
     parser.add_argument('--pruning_percent_wei', type=float, default=0.1)
     parser.add_argument('--pruning_percent_adj', type=float, default=0.1)
+    parser.add_argument('--pruning_percent_feat', type=float, default=0.1)
     parser.add_argument('--weight_dir', type=str, default='')
     parser.add_argument('--rewind_soft_mask', action='store_true')
     parser.add_argument('--init_soft_mask_type',
@@ -620,13 +627,13 @@ if __name__ == "__main__":
     args['net'] = 'gcn'
     # args['net'] = 'graphsage'
 
-    # args['dataset'] = 'cora'
+    args['dataset'] = 'cora'
     # args['dataset'] = 'citeseer'
     # args['dataset'] = 'chameleon'
     # args['dataset'] = 'actor'
     # args['dataset'] = 'squirrel'
     # args['dataset'] = 'wikics'
-    args['dataset'] = 'pubmed'
+    # args['dataset'] = 'pubmed'
     # args['dataset'] = 'reddit'
     # args['dataset'] = 'arxiv'
     # args['dataset'] = 'amazon_comp'
@@ -643,10 +650,10 @@ if __name__ == "__main__":
 
     if args['net'] == 'gcn':
         args['pruning_percent_wei'] = 0.5
-        args['pruning_percent_adj'] = 0.9
+        args['pruning_percent_feat'] = 0.2
     elif args['net'] == 'graphsage':
         args['pruning_percent_wei'] = 0.5
-        args['pruning_percent_adj'] = 0.3
+        args['pruning_percent_feat'] = 0.3
 
     # args['pruning_percent_wei'] = 0.1
 
@@ -655,16 +662,19 @@ if __name__ == "__main__":
         args['weight_decay'] = 8e-5
         args['s1'] = 1e-2
         args['s2'] = 1e-2
+        args['s3'] = 1e-2
     elif args['dataset'] == 'citeseer':
         args['lr'] = 0.01
         args['weight_decay'] = 5e-4
         args['s1'] = 1e-2
         args['s2'] = 1e-2
+        args['s3'] = 1e-2
     elif args['dataset'] == 'pubmed':
         args['lr'] = 0.01
         args['weight_decay'] = 5e-4
         args['s1'] = 1e-6
         args['s2'] = 1e-3
+        args['s3'] = 1e-6
 
     seed_dict = {
         'cora': 2377,
@@ -753,6 +763,8 @@ if __name__ == "__main__":
         if args['net'] == 'gcn':
             rewind_weight['adj_mask1_train'] = final_mask_dict['adj_mask']
             rewind_weight['adj_mask2_fixed'] = final_mask_dict['adj_mask']
+            rewind_weight['feat_mask1_train'] = final_mask_dict['feat_mask']
+            rewind_weight['feat_mask2_fixed'] = final_mask_dict['feat_mask']
             rewind_weight['net_layer.0.weight_mask_train'] = final_mask_dict['weight1_mask']
             rewind_weight['net_layer.0.weight_mask_fixed'] = final_mask_dict['weight1_mask']
             rewind_weight['net_layer.1.weight_mask_train'] = final_mask_dict['weight2_mask']

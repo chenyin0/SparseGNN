@@ -246,12 +246,13 @@ def torch_normalize_adj(adj):
 
     adj = adj.to_dense()
     rowsum = adj.sum(1)
+
     adj = adj.to_sparse().float()
     d_inv_sqrt = torch.pow(rowsum, -0.5).flatten()
     d_inv_sqrt[torch.isinf(d_inv_sqrt)] = 0.0
     # d_mat_inv_sqrt = torch.diag(d_inv_sqrt).cuda()
     d_mat_inv_sqrt = torch.diag(d_inv_sqrt)
-    # return adj.mm(d_mat_inv_sqrt).t().mm(d_mat_inv_sqrt)
+    # return adj.mm(d_mat_inv_sqrt).t().mm(d_mat_inv_sqrt).to(device)
 
     # adj_sp = adj.to_sparse()
     # d_mat_inv_sqrt_sp = d_mat_inv_sqrt.to_sparse()
@@ -261,6 +262,15 @@ def torch_normalize_adj(adj):
     res = torch.sparse.mm(torch.sparse.mm(adj, d_mat_inv_sqrt_sp).t(), d_mat_inv_sqrt_sp).to(device)
 
     return res
+
+    # # adj = adj
+    # d_inv_sqrt = torch.pow(rowsum, -0.5).flatten()
+    # d_inv_sqrt[torch.isinf(d_inv_sqrt)] = 0.0
+    # d_mat_inv_sqrt = torch.diag(d_inv_sqrt).to(adj.device)
+    # d_mat_inv_sqrt = adj.type(torch.int8)
+    # res = adj.mm(d_mat_inv_sqrt).t().mm(d_mat_inv_sqrt).to(device)
+    # res = res.type(torch.float)
+    # return res
 
 
 def normalize_adj(adj):
