@@ -81,7 +81,7 @@ def run_base(args, adj, features, labels, idx_train, idx_val, idx_test, n_classe
         adj_spar, wei_spar, feat_spar = pruning.print_sparsity(net_gcn)
         # gpu_tracker.track()
     elif args['net'] == 'graphsage':
-        adj_spar, wei_spar = pruning_sage.print_sparsity(net_gcn)
+        adj_spar, wei_spar, feat_spar = pruning_sage.print_sparsity(net_gcn)
 
     # weight = net_gcn.net_layer[0].weight_mask_fixed
     # print(weight)
@@ -168,7 +168,7 @@ def run_base(args, adj, features, labels, idx_train, idx_val, idx_test, n_classe
     time_cost = net_gcn.mm_time
 
     return best_val_acc['val_acc'], best_val_acc['test_acc'], best_val_acc[
-        'epoch'], adj_spar, wei_spar, time_cost
+        'epoch'], adj_spar, wei_spar, feat_spar, time_cost
 
 
 # def run_fix_mask(args, seed, rewind_weight_mask):
@@ -417,7 +417,7 @@ def run_fix_mask(args, seed, rewind_weight_mask, adj, features, labels, idx_trai
     time_cost = net_gcn.mm_time
 
     return best_val_acc['val_acc'], best_val_acc['test_acc'], best_val_acc[
-        'epoch'], adj_spar, wei_spar, time_cost
+        'epoch'], adj_spar, wei_spar, feat_spar, time_cost
 
 
 # def run_get_mask(args, seed, imp_num, rewind_weight_mask=None):
@@ -624,8 +624,8 @@ if __name__ == "__main__":
     # from dgl.data import SBMMixtureDataset
     # dataset = SBMMixtureDataset(n_graphs=1, n_nodes=8396, n_communities=60, avg_deg=5.5)
 
-    args['net'] = 'gcn'
-    # args['net'] = 'graphsage'
+    # args['net'] = 'gcn'
+    args['net'] = 'graphsage'
 
     args['dataset'] = 'cora'
     # args['dataset'] = 'citeseer'
@@ -653,7 +653,7 @@ if __name__ == "__main__":
         args['pruning_percent_feat'] = 0.2
     elif args['net'] == 'graphsage':
         args['pruning_percent_wei'] = 0.5
-        args['pruning_percent_feat'] = 0.3
+        args['pruning_percent_feat'] = 0.2
 
     # args['pruning_percent_wei'] = 0.1
 
@@ -710,7 +710,7 @@ if __name__ == "__main__":
     adj, features, labels, idx_train, idx_val, idx_test, n_classes, g, edge_index = utils.load_dataset(
         args['dataset'])
 
-    base_acc_val, base_acc_test, final_epoch_list, adj_spar, wei_spar, time_cost_base = run_base(
+    base_acc_val, base_acc_test, final_epoch_list, adj_spar, wei_spar, feat_spar, time_cost_base = run_base(
         args, adj, features, labels, idx_train, idx_val, idx_test, n_classes, edge_index)
 
     pruning_ratio = args['graph_prune_ratio']
@@ -772,6 +772,8 @@ if __name__ == "__main__":
         elif args['net'] == 'graphsage':
             rewind_weight['adj_mask1_train'] = final_mask_dict['adj_mask']
             rewind_weight['adj_mask2_fixed'] = final_mask_dict['adj_mask']
+            rewind_weight['feat_mask1_train'] = final_mask_dict['feat_mask']
+            rewind_weight['feat_mask2_fixed'] = final_mask_dict['feat_mask']
             rewind_weight['net_layer.0.lin_l.weight_mask_train'] = final_mask_dict['weight1_mask']
             rewind_weight['net_layer.0.lin_l.weight_mask_fixed'] = final_mask_dict['weight1_mask']
             # rewind_weight['net_layer.1.lin_l.weight_mask_train'] = final_mask_dict['weight2_mask']
@@ -781,7 +783,7 @@ if __name__ == "__main__":
 
         # best_acc_val, final_acc_test, final_epoch_list, adj_spar, wei_spar = run_fix_mask(
         #     args, seed, rewind_weight)
-        best_acc_val, final_acc_test, final_epoch_list, adj_spar, wei_spar, time_effect = run_fix_mask(
+        best_acc_val, final_acc_test, final_epoch_list, adj_spar, wei_spar, feat_spar, time_effect = run_fix_mask(
             args, seed, rewind_weight, adj, features, labels, idx_train, idx_val, idx_test,
             n_classes, edge_index)
         # best_acc_val, final_acc_test, final_epoch_list, adj_spar, wei_spar = run_fix_mask(
@@ -790,9 +792,9 @@ if __name__ == "__main__":
 
         print("=" * 120)
         print(
-            "syd : Sparsity:[{}], Best Val:[{:.2f}] at epoch:[{}] | Final Test Acc:[{:.2f}] Adj:[{:.2f}%] Wei:[{:.2f}%] | Acc Drop:[{:.2f}]"
+            "syd : Sparsity:[{}], Best Val:[{:.2f}] at epoch:[{}] | Final Test Acc:[{:.2f}] Adj:[{:.2f}%] Wei:[{:.2f}%] Feat:[{:.2f}%]| Acc Drop:[{:.2f}]"
             .format(p + 1, best_acc_val * 100, final_epoch_list, final_acc_test * 100, adj_spar,
-                    wei_spar, (base_acc_test - final_acc_test) * 100))
+                    wei_spar, feat_spar, (base_acc_test - final_acc_test) * 100))
         print(
             'Base time:[{:.3f}], Pruning time:[{:.3f}], Effect time:[{:.3f}], Pruning cost:[{:.2f}]'
             .format(time_cost_base, time_pruning_total, time_effect,

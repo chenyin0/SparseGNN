@@ -32,17 +32,14 @@ class GraphSAGE(nn.Module):
 
         # self.adj_nonzero = torch.nonzero(adj, as_tuple=False).shape[0]
         self.adj_nonzero = adj._nnz()
-        # self.adj_mask1_train = nn.Parameter(self.generate_adj_mask(adj))
-        # self.adj_mask2_fixed = nn.Parameter(self.generate_adj_mask(adj), requires_grad=False)
+        self.adj_mask1_train = nn.Parameter(self.generate_adj_mask(adj))
+        self.adj_mask2_fixed = nn.Parameter(self.generate_adj_mask(adj), requires_grad=False)
 
-        ################
-        # Debug_yin_feat Replace adj_mask to feature mask
         vertex_num = adj.shape[0]
         # Only set mask for the 2nd-layer's features
-        self.adj_mask1_train = nn.Parameter(self.generate_feat_mask(vertex_num, embedding_dim[1]))
-        self.adj_mask2_fixed = nn.Parameter(self.generate_feat_mask(vertex_num, embedding_dim[1]),
+        self.feat_mask1_train = nn.Parameter(self.generate_feat_mask(vertex_num, embedding_dim[1]))
+        self.feat_mask2_fixed = nn.Parameter(self.generate_feat_mask(vertex_num, embedding_dim[1]),
                                             requires_grad=False)
-        ################
 
         self.normalize = utils.torch_normalize_adj
 
@@ -77,8 +74,8 @@ class GraphSAGE(nn.Module):
 
         ##########
         # Only add mask on features of the 2nd layer
-        h = torch.mul(h, self.adj_mask1_train)
-        h = torch.mul(h, self.adj_mask2_fixed)
+        h = torch.mul(h, self.feat_mask1_train)
+        h = torch.mul(h, self.feat_mask2_fixed)
         ##########
 
         h = self.net_layer[-1](h)
@@ -92,10 +89,11 @@ class GraphSAGE(nn.Module):
         
     def generate_adj_mask(self, input_adj):
 
-        sparse_adj = input_adj
+        sparse_adj = input_adj.to_dense()
         zeros = torch.zeros_like(sparse_adj)
         ones = torch.ones_like(sparse_adj)
         mask = torch.where(sparse_adj != 0, ones, zeros)
+        mask = mask.type(torch.float)
         return mask
     
     def generate_feat_mask(self, vertex_num, embedding_dim):
