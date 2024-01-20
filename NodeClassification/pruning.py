@@ -207,6 +207,8 @@ def get_feat_mask(mask_tensor, feat_mask_sum, threshold):
     for i, feat_sum in enumerate(feat_mask_sum):
         if feat_sum < threshold:
             mask[:, i] = 0
+        else:
+            mask[:, i] = 1
 
     # print(sum(mask.tolist()[0]))
 

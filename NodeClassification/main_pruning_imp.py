@@ -625,9 +625,9 @@ if __name__ == "__main__":
     # dataset = SBMMixtureDataset(n_graphs=1, n_nodes=8396, n_communities=60, avg_deg=5.5)
 
     # args['net'] = 'gcn'
-    args['net'] = 'graphsage'
+    # args['net'] = 'graphsage'
 
-    args['dataset'] = 'cora'
+    # args['dataset'] = 'cora'
     # args['dataset'] = 'citeseer'
     # args['dataset'] = 'chameleon'
     # args['dataset'] = 'actor'
@@ -638,7 +638,7 @@ if __name__ == "__main__":
     # args['dataset'] = 'arxiv'
     # args['dataset'] = 'amazon_comp'
 
-    args['graph_prune_ratio'] = 0.8
+    # args['graph_prune_ratio'] = 0.8
 
     args['total_epoch'] = 200
     args['gpu'] = 0
@@ -650,7 +650,7 @@ if __name__ == "__main__":
 
     if args['net'] == 'gcn':
         args['pruning_percent_wei'] = 0.5
-        args['pruning_percent_feat'] = 0.2
+        args['pruning_percent_feat'] = 0.3
     elif args['net'] == 'graphsage':
         args['pruning_percent_wei'] = 0.5
         args['pruning_percent_feat'] = 0.2
