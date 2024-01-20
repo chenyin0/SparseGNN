@@ -82,6 +82,7 @@ def subgradient_update_mask(model, args):
     model.adj_mask1_train.grad.data.add_(args['s1'] * torch.sign(model.adj_mask1_train.data))
     model.ginlayers[0].apply_func.mlp.linear.weight_mask_train.grad.data.add_(args['s2'] * torch.sign(model.ginlayers[0].apply_func.mlp.linear.weight_mask_train.data))
     model.ginlayers[1].apply_func.mlp.linear.weight_mask_train.grad.data.add_(args['s2'] * torch.sign(model.ginlayers[1].apply_func.mlp.linear.weight_mask_train.data))
+    model.feat_mask1_train.grad.data.add_(args['s3'] * torch.sign(model.feat_mask1_train.data))
 
 
 def get_mask_distribution(model, if_numpy=True):
@@ -106,12 +107,41 @@ def get_mask_distribution(model, if_numpy=True):
         return adj_mask_tensor.detach().cpu(), weight_mask_tensor.detach().cpu()
     
 
+def get_feat_mask_distribution(model, if_numpy=True):
+
+    feat_mask_tensor = torch.cumsum(model.feat_mask1_train.abs(), dim=0)[-1]
+    nonzero = torch.abs(feat_mask_tensor) > 0
+    feat_mask_tensor = feat_mask_tensor[nonzero]  # 13264 - 2708
+
+    if if_numpy:
+        return feat_mask_tensor.detach().cpu().numpy()
+    else:
+        return feat_mask_tensor.detach().cpu()
+    
+
 def get_each_mask(mask_weight_tensor, threshold):
     
     ones  = torch.ones_like(mask_weight_tensor)
     zeros = torch.zeros_like(mask_weight_tensor) 
     mask = torch.where(mask_weight_tensor.abs() > threshold, ones, zeros)
     return mask
+
+
+def get_feat_mask(mask_tensor, feat_mask_sum, threshold):
+
+    # mask = mask_tensor.clone().detach()
+    mask = mask_tensor
+    # mask = torch.ones_like(mask_tensor)
+    for i, feat_sum in enumerate(feat_mask_sum):
+        if feat_sum < threshold:
+            mask[:, i] = 0
+        else:
+            mask[:, i] = 1
+
+    # print(sum(mask.tolist()[0]))
+
+    return mask
+
 
 def get_each_mask_admm(mask_weight_tensor, threshold):
     
@@ -124,6 +154,7 @@ def get_final_mask_epoch(model, rewind_weight, args):
     
     adj_percent=args['pruning_percent_adj']
     wei_percent=args['pruning_percent_wei']
+    feat_percent=args['pruning_percent_feat']
 
     adj_mask, wei_mask = get_mask_distribution(model, if_numpy=False)
     #adj_mask.add_((2 * torch.rand(adj_mask.shape) - 1) * 1e-5)
@@ -139,7 +170,18 @@ def get_final_mask_epoch(model, rewind_weight, args):
     wei_thre_index = int(wei_total * wei_percent)
     wei_thre = wei_y[wei_thre_index]
 
+    #######
+    feat_mask_sum = get_feat_mask_distribution(model, if_numpy=False)
+    feat_total = feat_mask_sum.shape[0]
+    ### sort
+    feat_y, feat_i = torch.sort(feat_mask_sum)
+    ### get threshold
+    feat_thre_index = int(feat_total * feat_percent)
+    feat_thre = feat_y[feat_thre_index]
+    #######
+
     ori_adj_mask = model.adj_mask1_train.detach().cpu()
+    ori_feat_mask = model.feat_mask1_train.detach().cpu()
 
     rewind_weight['adj_mask1_train'] = get_each_mask(ori_adj_mask, adj_thre)
     rewind_weight['adj_mask2_fixed'] = rewind_weight['adj_mask1_train']
@@ -150,6 +192,8 @@ def get_final_mask_epoch(model, rewind_weight, args):
     rewind_weight['ginlayers.1.apply_func.mlp.linear.weight_mask_train'] = get_each_mask(model.ginlayers[1].apply_func.mlp.linear.state_dict()['weight_mask_train'], wei_thre)
     rewind_weight['ginlayers.1.apply_func.mlp.linear.weight_mask_fixed'] = rewind_weight['ginlayers.1.apply_func.mlp.linear.weight_mask_train']
 
+    rewind_weight['feat_mask1_train'] = get_feat_mask(ori_feat_mask, feat_mask_sum, feat_thre)
+    rewind_weight['feat_mask2_fixed'] = rewind_weight['feat_mask1_train']
 
     adj_spar = rewind_weight['adj_mask2_fixed'].sum() * 100 / model.edge_num
     wei_nonzero = rewind_weight['ginlayers.0.apply_func.mlp.linear.weight_mask_fixed'].sum() + rewind_weight['ginlayers.1.apply_func.mlp.linear.weight_mask_fixed'].sum()
@@ -250,6 +294,10 @@ def print_sparsity(model):
     adj_mask_nonzero = model.adj_mask2_fixed.sum().item()
     adj_spar = adj_mask_nonzero * 100 / adj_nonzero
 
+    feat_total = model.feat_mask2_fixed.numel()
+    feat_nonzero = model.feat_mask2_fixed.sum().item()
+    feat_spar = feat_nonzero * 100 / feat_total
+
     weight1_total = model.ginlayers[0].apply_func.mlp.linear.weight_mask_fixed.numel()
     weight2_total = model.ginlayers[1].apply_func.mlp.linear.weight_mask_fixed.numel()
     weight_total = weight1_total + weight2_total
@@ -260,17 +308,18 @@ def print_sparsity(model):
 
     wei_spar = weight_nonzero * 100 / weight_total
     print("-" * 100)
-    print("Sparsity: Adj:[{:.2f}%] Wei:[{:.2f}%]"
-    .format(adj_spar, wei_spar))
+    print("Sparsity: Adj:[{:.2f}%] Wei:[{:.2f}%] Feat:[{:.2f}%]"
+    .format(adj_spar, wei_spar, feat_spar))
     print("-" * 100)
 
-    return adj_spar, wei_spar
+    return adj_spar, wei_spar, feat_spar
 
 
 
 def add_trainable_mask_noise(model, c=1e-5):
     
     model.adj_mask1_train.requires_grad = False
+    model.feat_mask1_train.requires_grad = False
     model.ginlayers[0].apply_func.mlp.linear.weight_mask_train.requires_grad = False
     model.ginlayers[1].apply_func.mlp.linear.weight_mask_train.requires_grad = False
    
@@ -289,6 +338,12 @@ def add_trainable_mask_noise(model, c=1e-5):
     rand3 = rand3 * model.ginlayers[1].apply_func.mlp.linear.weight_mask_train
     model.ginlayers[1].apply_func.mlp.linear.weight_mask_train.add_(rand3)
 
+    rand4 = (2 * torch.rand(model.feat_mask1_train.shape) - 1) * c
+    rand4 = rand4.to(model.feat_mask1_train.device) 
+    rand4 = rand4 * model.feat_mask1_train
+    model.feat_mask1_train.add_(rand4)
+
     model.adj_mask1_train.requires_grad = True
+    model.feat_mask1_train.requires_grad = True
     model.ginlayers[0].apply_func.mlp.linear.weight_mask_train.requires_grad = True
     model.ginlayers[1].apply_func.mlp.linear.weight_mask_train.requires_grad = True

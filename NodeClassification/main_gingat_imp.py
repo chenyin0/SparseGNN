@@ -80,7 +80,7 @@ def run_base(args, g, adj, features, labels, idx_train, idx_val, idx_test, n_cla
     # net_gcn.load_state_dict(rewind_weight_mask)
 
     if args['net'] == 'gin':
-        adj_spar, wei_spar = pruning_gin.print_sparsity(net_gcn)
+        adj_spar, wei_spar, feat_spar = pruning_gin.print_sparsity(net_gcn)
     else:
         adj_spar, wei_spar = pruning_gat.print_sparsity(net_gcn)
 
@@ -200,7 +200,7 @@ def run_fix_mask(args, imp_num, rewind_weight_mask, g, adj, features, labels, id
     net_gcn.load_state_dict(rewind_weight_mask)
 
     if args['net'] == 'gin':
-        adj_spar, wei_spar = pruning_gin.print_sparsity(net_gcn)
+        adj_spar, wei_spar, feat_spar = pruning_gin.print_sparsity(net_gcn)
     else:
         adj_spar, wei_spar = pruning_gat.print_sparsity(net_gcn)
 
@@ -333,7 +333,7 @@ def run_fix_mask(args, imp_num, rewind_weight_mask, g, adj, features, labels, id
     #           file=f)
 
     return best_val_acc['val_acc'], best_val_acc['test_acc'], best_val_acc[
-        'epoch'], adj_spar, wei_spar
+        'epoch'], adj_spar, wei_spar, feat_spar
 
 
 # def run_get_mask(args, imp_num, rewind_weight_mask=None):
@@ -402,7 +402,7 @@ def run_get_mask(args,
 
     if args['net'] == 'gin':
         pruning_gin.add_trainable_mask_noise(net_gcn, c=1e-5)
-        adj_spar, wei_spar = pruning_gin.print_sparsity(net_gcn)
+        adj_spar, wei_spar, feat_spar = pruning_gin.print_sparsity(net_gcn)
     else:
         pruning_gat.add_trainable_mask_noise(net_gcn, c=1e-5)
         adj_spar, wei_spar = pruning_gat.print_sparsity(net_gcn)
@@ -441,10 +441,10 @@ def run_get_mask(args,
                 best_val_acc['epoch'] = epoch
 
                 if args['net'] == 'gin':
-                    rewind_weight, adj_spar, wei_spar = pruning_gin.get_final_mask_epoch(
+                    best_epoch_mask, adj_spar, wei_spar = pruning_gin.get_final_mask_epoch(
                         net_gcn, rewind_weight, args)
                 else:
-                    rewind_weight, adj_spar, wei_spar = pruning_gat.get_final_mask_epoch(
+                    best_epoch_mask, adj_spar, wei_spar = pruning_gat.get_final_mask_epoch(
                         net_gcn, rewind_weight, args)
 
         # print(
@@ -453,7 +453,7 @@ def run_get_mask(args,
         #             best_val_acc['val_acc'] * 100, best_val_acc['test_acc'] * 100,
         #             best_val_acc['epoch'], adj_spar, wei_spar))
 
-    return rewind_weight
+    return best_epoch_mask
 
 
 def parser_loader():
@@ -467,10 +467,15 @@ def parser_loader():
                         type=float,
                         default=0.0001,
                         help='scale sparse rate (default: 0.0001)')
+    parser.add_argument('--s3',
+                        type=float,
+                        default=0.0001,
+                        help='scale sparse rate (default: 0.0001)')
     parser.add_argument('--mask_epoch', type=int, default=300)
     parser.add_argument('--fix_epoch', type=int, default=300)
     parser.add_argument('--pruning_percent_wei', type=float, default=0.1)
     parser.add_argument('--pruning_percent_adj', type=float, default=0.1)
+    parser.add_argument('--pruning_percent_feat', type=float, default=0.1)
     parser.add_argument('--dataset', type=str, default='')
     parser.add_argument('--embedding-dim', nargs='+', type=int, default=[3703, 16, 6])
     parser.add_argument('--lr', type=float, default=0.01)
@@ -504,11 +509,12 @@ if __name__ == "__main__":
     # args['dataset'] = 'amazon_comp'
 
     args['total_epoch'] = 200
-    # args['gpu'] = 0
+    args['gpu'] = 0
     args['n_hidden'] = 512
     args['n_layer'] = 3
-    args['pruning_percent_wei'] = 0.05
+    args['pruning_percent_wei'] = 0.3
     args['pruning_percent_adj'] = 0
+    args['pruning_percent_feat'] = 0.4
     args['init_soft_mask_type'] = 'all_one'
 
     if args['net'] == 'gin':
@@ -517,16 +523,19 @@ if __name__ == "__main__":
             args['weight_decay'] = 8e-5
             args['s1'] = 1e-3
             args['s2'] = 1e-3
+            args['s3'] = 1e-3
         elif args['dataset'] == 'citeseer':
             args['lr'] = 0.01
             args['weight_decay'] = 5e-4
             args['s1'] = 1e-5
             args['s2'] = 1e-5
+            args['s3'] = 1e-3
         elif args['dataset'] == 'pubmed':
             args['lr'] = 0.01
             args['weight_decay'] = 5e-4
             args['s1'] = 1e-5
             args['s2'] = 1e-5
+            args['s3'] = 1e-3
     elif args['net'] == 'gat':
         if args['dataset'] == 'cora':
             args['lr'] = 0.008
@@ -564,6 +573,8 @@ if __name__ == "__main__":
 
     adj, features, labels, idx_train, idx_val, idx_test, n_classes, g, edge_index = utils.load_dataset(
         args['dataset'])
+    
+    base_acc_val, base_acc_test, base_val_epoch, adj_spar, wei_spar = run_base(args, g, adj, features, labels, idx_train, idx_val, idx_test, n_classes)
 
     for imp in range(100):
 
@@ -571,15 +582,15 @@ if __name__ == "__main__":
         rewind_weight = run_get_mask(args, imp, g, features, labels, idx_train, idx_val, idx_test,
                                      n_classes, rewind_weight)
         # run_fix_mask(args, imp, rewind_weight)
-        best_acc_val, final_acc_test, final_epoch_list, adj_spar, wei_spar = run_fix_mask(
+        best_acc_val, final_acc_test, final_epoch_list, adj_spar, wei_spar, feat_spar = run_fix_mask(
             args, imp, rewind_weight, g, adj, features, labels, idx_train, idx_val, idx_test,
             n_classes)
 
         print("=" * 120)
         print(
-            "syd : Sparsity:[{}], Best Val:[{:.2f}] at epoch:[{}] | Final Test Acc:[{:.2f}] Adj:[{:.2f}%] Wei:[{:.2f}%]"
+            "syd : Sparsity:[{}], Best Val:[{:.2f}] at epoch:[{}] | Final Test Acc:[{:.2f}] Adj:[{:.2f}%] Wei:[{:.2f}%] Feat:[{:.2f}%]| Acc Drop:[{:.2f}]"
             .format(imp + 1, best_acc_val * 100, final_epoch_list, final_acc_test * 100, adj_spar,
-                    wei_spar))
+                    wei_spar, feat_spar, (base_acc_test - final_acc_test) * 100))
         print("=" * 120)
 
     print('\n>> Task {:s} execution time: {}'.format(
